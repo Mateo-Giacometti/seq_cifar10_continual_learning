@@ -1,0 +1,5 @@
+# ignorar el pycache
+__pycache__/
+
+# ignorar los checkpoints de entrenamiento
+checkpoints/
