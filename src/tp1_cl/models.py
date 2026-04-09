@@ -32,6 +32,19 @@ class SupConNetwork(nn.Module):
         return feat, proj
 
 
+class ContinualClassifier(nn.Module):
+    """Backbone + linear classifier used for continual class-incremental experiments."""
+
+    def __init__(self, backbone: nn.Module, feat_dim: int, num_classes: int) -> None:
+        super().__init__()
+        self.backbone = backbone
+        self.classifier = nn.Linear(feat_dim, num_classes)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        features = self.backbone(x)
+        return self.classifier(features)
+
+
 class SupConLoss(nn.Module):
     def __init__(
         self, temperature: float = 0.07, base_temperature: float | None = None
@@ -49,7 +62,7 @@ class SupConLoss(nn.Module):
         features = F.normalize(features, dim=2)
         contrast_features = features.view(batch_size * n_views, -1)
 
-        labels_rep = labels.repeat_interleave(n_views)         # (B*n_views,)
+        labels_rep = labels.repeat_interleave(n_views)  # (B*n_views,)
         labels_rep = labels_rep.view(-1, 1)
         mask = torch.eq(labels_rep, labels_rep.T).float().to(device_local)
 
@@ -73,7 +86,18 @@ class SupConLoss(nn.Module):
 
 
 def build_cifar_resnet18() -> Tuple[nn.Module, int]:
-    backbone = models.resnet18(weights=None)
+    return build_cifar_resnet(model_name="resnet18")
+
+
+def build_cifar_resnet(model_name: str = "resnet18") -> Tuple[nn.Module, int]:
+    """Build a CIFAR-adapted ResNet backbone from torchvision."""
+    if model_name == "resnet18":
+        backbone = models.resnet18(weights=None)
+    elif model_name == "resnet34":
+        backbone = models.resnet34(weights=None)
+    else:
+        raise ValueError("model_name must be 'resnet18' or 'resnet34'")
+
     backbone.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
     backbone.maxpool = nn.Identity()
     feat_dim = backbone.fc.in_features

@@ -152,3 +152,26 @@ def plot_linear_history(
     plt.grid(True, alpha=0.3)
     plt.legend()
     plt.show()
+
+
+def plot_cl_metrics(
+    history: Dict[str, List[float]],
+    title: str = "Continual Learning metrics",
+) -> None:
+    task_ids = [int(t) for t in history.get("task_id", [])]
+    if len(task_ids) == 0:
+        print("No continual-learning history to plot.")
+        return
+
+    x = [task_id + 1 for task_id in task_ids]
+
+    plt.figure(figsize=(8, 4.5))
+    plt.plot(x, history.get("class_il", []), marker="o", label="Class-IL")
+    plt.plot(x, history.get("task_il", []), marker="s", label="Task-IL")
+    plt.title(title)
+    plt.xlabel("Number of tasks learned")
+    plt.ylabel("Accuracy (%)")
+    plt.xticks(x)
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.show()

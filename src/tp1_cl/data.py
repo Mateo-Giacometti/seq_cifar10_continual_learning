@@ -33,17 +33,80 @@ class TaskConfig:
     classes_per_task : int
         The number of classes per task.
     class_order : Optional[List[int]]
-        The order of classes for each task. If None, a random order will be used.
+        The order of classes for each task. If None, canonical CIFAR-10 order is used.
+    task_classes : Optional[List[List[int]]]
+        Explicit class split per task. If provided, it takes precedence over class_order.
+    shuffle_class_order : bool
+        Whether to shuffle canonical class order when class_order is None.
+    seed : int
+        Seed used when shuffle_class_order is enabled.
+    allow_partial_last_task : bool
+        Allow the final task to contain fewer than classes_per_task classes.
     """
 
     n_tasks: int = 5
     classes_per_task: int = 2
     class_order: Optional[List[int]] = None
+    task_classes: Optional[List[List[int]]] = None
+    shuffle_class_order: bool = False
+    seed: int = 42
+    allow_partial_last_task: bool = False
+
+    def __post_init__(self) -> None:
+        if self.n_tasks <= 0:
+            raise ValueError("n_tasks must be > 0")
+        if self.classes_per_task <= 0:
+            raise ValueError("classes_per_task must be > 0")
+
+        if self.class_order is not None and self.task_classes is not None:
+            raise ValueError("Use either class_order or task_classes, not both")
+
+        if self.class_order is not None:
+            if sorted(self.class_order) != list(range(10)):
+                raise ValueError("class_order must be a permutation of [0..9]")
+
+        if self.task_classes is not None:
+            if len(self.task_classes) == 0:
+                raise ValueError("task_classes must contain at least one task")
+
+            self.n_tasks = len(self.task_classes)
+
+            flat: List[int] = []
+            for i, task in enumerate(self.task_classes):
+                if len(task) == 0:
+                    raise ValueError(f"task_classes[{i}] cannot be empty")
+
+                if not self.allow_partial_last_task or i < self.n_tasks - 1:
+                    if len(task) != self.classes_per_task:
+                        raise ValueError(
+                            "All tasks must have classes_per_task classes unless allow_partial_last_task is True"
+                        )
+                else:
+                    if len(task) > self.classes_per_task:
+                        raise ValueError(
+                            "Last task cannot have more than classes_per_task classes"
+                        )
+
+                for cls_id in task:
+                    if cls_id < 0 or cls_id > 9:
+                        raise ValueError("class ids must be in [0..9] for CIFAR-10")
+
+                flat.extend(task)
+
+            if len(set(flat)) != len(flat):
+                raise ValueError(
+                    "task_classes cannot contain duplicated classes across tasks"
+                )
 
 
 class CIFAR10TaskDataset(Dataset):
-    def __init__(self, base_dataset: datasets.CIFAR10, indices: List[int], transform: Optional[Callable] = None, 
-                 target_transform: Optional[Callable] = None,) -> None:
+    def __init__(
+        self,
+        base_dataset: datasets.CIFAR10,
+        indices: List[int],
+        transform: Optional[Callable] = None,
+        target_transform: Optional[Callable] = None,
+    ) -> None:
         """
         Dataset wrapper for a specific task in CIFAR-10.
 
@@ -91,23 +154,7 @@ class SeqCIFAR10Builder:
         self.root = root
         self.config = config
 
-        if config.n_tasks * config.classes_per_task > 10:
-            raise ValueError("n_tasks * classes_per_task must be <= 10 for CIFAR-10")
-
-        if config.class_order is None:
-            class_order = list(range(10))
-        else:
-            class_order = config.class_order
-            if sorted(class_order) != list(range(10)):
-                raise ValueError("class_order must be a permutation of [0..9]")
-
-        self.class_order = class_order
-        self.task_classes = [
-            self.class_order[
-                i * config.classes_per_task : (i + 1) * config.classes_per_task
-            ]
-            for i in range(config.n_tasks)
-        ]
+        self.class_order, self.task_classes = self._resolve_split()
 
         self.train_base = datasets.CIFAR10(
             root=self.root, train=True, download=True, transform=None
@@ -118,6 +165,52 @@ class SeqCIFAR10Builder:
 
         self.train_indices_by_task = self._build_task_indices(self.train_base.targets)
         self.test_indices_by_task = self._build_task_indices(self.test_base.targets)
+
+    def _resolve_split(self) -> Tuple[List[int], List[List[int]]]:
+        if self.config.task_classes is not None:
+            task_classes = [list(task) for task in self.config.task_classes]
+            class_order = [cls_id for task in task_classes for cls_id in task]
+            return class_order, task_classes
+
+        if self.config.class_order is not None:
+            class_order = list(self.config.class_order)
+        else:
+            class_order = list(range(10))
+            if self.config.shuffle_class_order:
+                rng = random.Random(self.config.seed)
+                rng.shuffle(class_order)
+
+        required = self.config.n_tasks * self.config.classes_per_task
+        if required > len(class_order) and not self.config.allow_partial_last_task:
+            raise ValueError(
+                "Requested tasks exceed available classes. "
+                "Reduce n_tasks/classes_per_task or enable allow_partial_last_task."
+            )
+
+        task_classes: List[List[int]] = []
+        for i in range(self.config.n_tasks):
+            start = i * self.config.classes_per_task
+            end = (i + 1) * self.config.classes_per_task
+            classes = class_order[start:end]
+
+            if len(classes) == self.config.classes_per_task:
+                task_classes.append(classes)
+                continue
+
+            is_last_task = i == self.config.n_tasks - 1
+            if (
+                self.config.allow_partial_last_task
+                and is_last_task
+                and len(classes) > 0
+            ):
+                task_classes.append(classes)
+                continue
+
+            raise ValueError(
+                "Could not build a valid task split with current configuration."
+            )
+
+        return class_order, task_classes
 
     def _build_task_indices(self, targets: List[int]) -> Dict[int, List[int]]:
         task_indices: Dict[int, List[int]] = {}
@@ -150,35 +243,52 @@ class SeqCIFAR10Builder:
         transform: Optional[Callable],
         train_shuffle: bool = True,
         num_workers: int = 0,
+        test_transform: Optional[Callable] = None,
+        train_target_transform: Optional[Callable] = None,
+        test_target_transform: Optional[Callable] = None,
+        loader_kwargs: Optional[Dict[str, object]] = None,
     ) -> Tuple[Dict[int, DataLoader], Dict[int, DataLoader]]:
         train_loaders: Dict[int, DataLoader] = {}
         test_loaders: Dict[int, DataLoader] = {}
-        loader_kwargs = {
+
+        resolved_loader_kwargs = {
             "num_workers": num_workers,
             "pin_memory": torch.cuda.is_available(),
             "persistent_workers": num_workers > 0,
         }
         if num_workers > 0:
-            loader_kwargs["prefetch_factor"] = 4
+            resolved_loader_kwargs["prefetch_factor"] = 4
+        if loader_kwargs is not None:
+            resolved_loader_kwargs.update(loader_kwargs)
 
-        for task_id in range(self.config.n_tasks):
+        resolved_test_transform = (
+            transform if test_transform is None else test_transform
+        )
+
+        for task_id in range(len(self.task_classes)):
             train_ds = self.get_task_dataset(
-                task_id, train=True, transform=transform, target_transform=None
+                task_id,
+                train=True,
+                transform=transform,
+                target_transform=train_target_transform,
             )
             test_ds = self.get_task_dataset(
-                task_id, train=False, transform=transform, target_transform=None
+                task_id,
+                train=False,
+                transform=resolved_test_transform,
+                target_transform=test_target_transform,
             )
             train_loaders[task_id] = DataLoader(
                 train_ds,
                 batch_size=batch_size,
                 shuffle=train_shuffle,
-                **loader_kwargs,
+                **resolved_loader_kwargs,
             )
             test_loaders[task_id] = DataLoader(
                 test_ds,
                 batch_size=batch_size,
                 shuffle=False,
-                **loader_kwargs,
+                **resolved_loader_kwargs,
             )
         return train_loaders, test_loaders
 
@@ -189,7 +299,14 @@ class SeqCIFAR10Builder:
                 {
                     "task_id": task_id,
                     "classes": classes,
-                    "class_names": [CIFAR10_CLASSES[c] for c in classes],
+                    "class_names": [
+                        (
+                            CIFAR10_CLASSES[c]
+                            if 0 <= c < len(CIFAR10_CLASSES)
+                            else f"class_{c}"
+                        )
+                        for c in classes
+                    ],
                     "n_train": len(self.train_indices_by_task[task_id]),
                     "n_test": len(self.test_indices_by_task[task_id]),
                 }
@@ -267,25 +384,43 @@ class LabelMapper:
         return self.mapping[int(y)]
 
 
-def build_transforms() -> Tuple[transforms.Compose, transforms.Compose]:
-    mean = (0.4914, 0.4822, 0.4465)
-    std = (0.2470, 0.2435, 0.2616)
+@dataclass
+class TransformConfig:
+    """Configuration for evaluation and SupCon augmentation pipelines."""
+
+    mean: Tuple[float, float, float] = (0.4914, 0.4822, 0.4465)
+    std: Tuple[float, float, float] = (0.2470, 0.2435, 0.2616)
+    crop_size: int = 32
+    crop_scale: Tuple[float, float] = (0.2, 1.0)
+    hflip_prob: float = 0.5
+    color_jitter_values: Tuple[float, float, float, float] = (0.4, 0.4, 0.4, 0.1)
+    color_jitter_prob: float = 0.8
+    grayscale_prob: float = 0.2
+
+
+def build_transforms(
+    config: Optional[TransformConfig] = None,
+) -> Tuple[transforms.Compose, transforms.Compose]:
+    cfg = TransformConfig() if config is None else config
 
     eval_transform = transforms.Compose(
         [
             transforms.ToTensor(),
-            transforms.Normalize(mean, std),
+            transforms.Normalize(cfg.mean, cfg.std),
         ]
     )
 
     supcon_train_transform = transforms.Compose(
         [
-            transforms.RandomResizedCrop(size=32, scale=(0.2, 1.0)),
-            transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
-            transforms.RandomGrayscale(p=0.2),
+            transforms.RandomResizedCrop(size=cfg.crop_size, scale=cfg.crop_scale),
+            transforms.RandomHorizontalFlip(p=cfg.hflip_prob),
+            transforms.RandomApply(
+                [transforms.ColorJitter(*cfg.color_jitter_values)],
+                p=cfg.color_jitter_prob,
+            ),
+            transforms.RandomGrayscale(p=cfg.grayscale_prob),
             transforms.ToTensor(),
-            transforms.Normalize(mean, std),
+            transforms.Normalize(cfg.mean, cfg.std),
         ]
     )
 
