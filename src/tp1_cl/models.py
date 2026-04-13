@@ -85,6 +85,79 @@ class SupConLoss(nn.Module):
         return loss
 
 
+class AsymmetricSupConLoss(nn.Module):
+    """Asymmetric supervised contrastive loss used in Co2L."""
+
+    def __init__(self, temperature: float = 0.5, base_temperature: float | None = None) -> None:
+        super().__init__()
+        self.temperature = temperature
+        self.base_temperature = temperature if base_temperature is None else base_temperature
+
+    def forward(
+        self,
+        features: torch.Tensor,
+        labels: torch.Tensor,
+        current_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        device_local = features.device
+        batch_size, n_views, _ = features.shape
+        if n_views != 2:
+            raise ValueError("AsymmetricSupConLoss expects exactly 2 views per sample")
+
+        features = F.normalize(features, dim=2)
+        contrast_features = features.view(batch_size * n_views, -1)
+
+        labels_rep = labels.repeat_interleave(n_views).view(-1, 1)
+        positive_mask = torch.eq(labels_rep, labels_rep.T).float().to(device_local)
+
+        logits = torch.matmul(contrast_features, contrast_features.T) / self.temperature
+        logits = logits - logits.max(dim=1, keepdim=True)[0].detach()
+
+        logits_mask = torch.ones_like(logits) - torch.eye(batch_size * n_views, device=device_local)
+        exp_logits = torch.exp(logits) * logits_mask
+        log_prob = logits - torch.log(exp_logits.sum(dim=1, keepdim=True) + 1e-12)
+
+        positive_mask = positive_mask * logits_mask
+        pos_counts = positive_mask.sum(dim=1)
+        valid_anchor_rows = pos_counts > 0
+        mean_log_prob_pos = torch.zeros_like(pos_counts)
+        mean_log_prob_pos[valid_anchor_rows] = (
+            (positive_mask[valid_anchor_rows] * log_prob[valid_anchor_rows]).sum(dim=1)
+            / (pos_counts[valid_anchor_rows] + 1e-12)
+        )
+
+        sample_anchor_mask = current_mask.to(device_local).repeat_interleave(n_views)
+        anchor_rows = sample_anchor_mask & valid_anchor_rows
+        if not torch.any(anchor_rows):
+            return torch.tensor(0.0, device=device_local)
+
+        loss_rows = -(self.temperature / self.base_temperature) * mean_log_prob_pos
+        return loss_rows[anchor_rows].mean()
+
+
+class IRDLoss(nn.Module):
+    """Instance-wise relation distillation loss from Co2L."""
+
+    def __init__(self, kappa: float = 0.2, kappa_star: float = 0.01) -> None:
+        super().__init__()
+        self.kappa = kappa
+        self.kappa_star = kappa_star
+
+    def _relation_probs(self, z: torch.Tensor, temperature: float) -> torch.Tensor:
+        z = F.normalize(z, dim=1)
+        sim = torch.matmul(z, z.T) / temperature
+        sim = sim - sim.max(dim=1, keepdim=True)[0].detach()
+
+        mask = torch.eye(sim.size(0), device=sim.device, dtype=torch.bool)
+        sim = sim.masked_fill(mask, float("-inf"))
+        return F.softmax(sim, dim=1)
+
+    def forward(self, z_current: torch.Tensor, z_past: torch.Tensor) -> torch.Tensor:
+        p_past = self._relation_probs(z_past.detach(), self.kappa_star)
+        p_curr = self._relation_probs(z_current, self.kappa)
+        return -(p_past * torch.log(p_curr + 1e-12)).sum(dim=1).mean()
+
+
 def build_cifar_resnet18() -> Tuple[nn.Module, int]:
     return build_cifar_resnet(model_name="resnet18")
 

@@ -1,8 +1,17 @@
-from typing import Dict, List, Tuple
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+
+
+def _save_figure(save_path: Optional[str | Path], fig: plt.Figure) -> None:
+    if save_path is None:
+        return
+    output_path = Path(save_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=200, bbox_inches="tight")
 
 
 def subsample_for_viz(
@@ -71,13 +80,14 @@ def reduce_to_2d(
     return coords, "PCA"
 
 
-def plot_supcon_loss(losses: List[float]) -> None:
-    plt.figure(figsize=(7, 4))
+def plot_supcon_loss(losses: List[float], save_path: Optional[str | Path] = None) -> None:
+    fig = plt.figure(figsize=(7, 4))
     plt.plot(range(1, len(losses) + 1), losses, marker="o")
     plt.title("SupCon pretraining loss (Task 0)")
     plt.xlabel("Epoch")
     plt.ylabel("Loss")
     plt.grid(True, alpha=0.3)
+    _save_figure(save_path, fig)
     plt.show()
 
 
@@ -86,6 +96,7 @@ def plot_embedding_snapshots(
     task_classes: List[int],
     class_names: List[str],
     seed: int,
+    save_path: Optional[str | Path] = None,
 ) -> None:
     stages = ["inicio", "mitad", "final"]
     available_stages = [s for s in stages if s in snapshots]
@@ -134,6 +145,7 @@ def plot_embedding_snapshots(
         ax.legend(handles=handles, loc="best")
 
     plt.tight_layout()
+    _save_figure(save_path, fig)
     plt.show()
 
 
@@ -142,8 +154,9 @@ def plot_linear_history(
     title: str = "Linear head accuracy",
     xlabel: str = "Epoch",
     ylabel: str = "Accuracy (%)",
+    save_path: Optional[str | Path] = None,
 ) -> None:
-    plt.figure(figsize=(7, 4))
+    fig = plt.figure(figsize=(7, 4))
     plt.plot(history["train_acc"], label="Train Accuracy")
     plt.plot(history["test_acc"], label="Test Accuracy")
     plt.title(title)
@@ -151,12 +164,14 @@ def plot_linear_history(
     plt.ylabel(ylabel)
     plt.grid(True, alpha=0.3)
     plt.legend()
+    _save_figure(save_path, fig)
     plt.show()
 
 
 def plot_cl_metrics(
     history: Dict[str, List[float]],
     title: str = "Continual Learning metrics",
+    save_path: Optional[str | Path] = None,
 ) -> None:
     task_ids = [int(t) for t in history.get("task_id", [])]
     if len(task_ids) == 0:
@@ -165,7 +180,7 @@ def plot_cl_metrics(
 
     x = [task_id + 1 for task_id in task_ids]
 
-    plt.figure(figsize=(8, 4.5))
+    fig = plt.figure(figsize=(8, 4.5))
     plt.plot(x, history.get("class_il", []), marker="o", label="Class-IL")
     plt.plot(x, history.get("task_il", []), marker="s", label="Task-IL")
     plt.title(title)
@@ -174,4 +189,5 @@ def plot_cl_metrics(
     plt.xticks(x)
     plt.grid(True, alpha=0.3)
     plt.legend()
+    _save_figure(save_path, fig)
     plt.show()

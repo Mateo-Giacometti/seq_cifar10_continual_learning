@@ -1,2 +1,87 @@
 # TP1 - Vision Artificial Avanzada
 
+Trabajo practico de `I309 - Vision Artificial Avanzada` (UdeSA) sobre aprendizaje continuo en Seq-CIFAR-10.
+
+Actualmente cubre y refactoriza las etapas:
+- `4.1` Preparacion de dataset secuencial + replay buffer.
+- `4.2` Pre-entrenamiento SupCon en Task 0 + linear evaluation.
+- `4.3.1` Fine-tuning naive.
+- `4.3.2` EWC.
+- `4.3.3` LwF.
+- `4.3.4` Co2L.
+- `[Opcional]` ER-ACE.
+
+## Estructura
+
+```
+.
+├── configs/
+│   └── cifar10.yaml
+├── src/
+│   └── tp1_cl/
+│       ├── __init__.py
+│       ├── config.py
+│       ├── checkpoints.py
+│       ├── data.py
+│       ├── models.py
+│       ├── train.py
+│       ├── viz.py
+│       └── methods/
+│           ├── __init__.py
+│           ├── finetuning.py
+│           ├── ewc.py
+│           ├── lwf.py
+│           ├── co2l.py
+│           └── er_ace.py
+├── tp1.ipynb
+├── project/
+├── papers/
+└── requirements.txt
+```
+
+## Instalacion
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+## Ejecucion
+
+1. Abrir `tp1.ipynb` desde la raiz del repositorio.
+2. Ejecutar las celdas en orden.
+3. El notebook usa `configs/cifar10.yaml` como fuente unica de hiperparametros.
+
+## Checkpointing
+
+Se guardan artefactos en `outputs/checkpoints/` para evitar reentrenar cuando solo cambian plots o analisis:
+- `task0_supcon.pt`
+- `task0_linear_eval.pt`
+- `naive_seq_cifar10.pt`
+- `ewc_seq_cifar10.pt`
+- `lwf_seq_cifar10.pt`
+- `co2l_seq_cifar10.pt`
+- `er_ace_seq_cifar10.pt`
+
+Las figuras se guardan en `outputs/imgs/` (ademas de mostrarse en notebook):
+- `supcon_loss.png`
+- `embedding_snapshots.png`
+- `linear_eval_accuracy.png`
+- `naive_cl_metrics.png`
+- `ewc_cl_metrics.png`
+- `lwf_cl_metrics.png`
+- `co2l_cl_metrics.png`
+- `er_ace_cl_metrics.png`
+- `methods_comparison.png`
+
+Adicionalmente se exporta una tabla comparativa en:
+- `outputs/metrics/methods_comparison.csv`
+
+Si el checkpoint existe, el notebook carga; si no existe, entrena y guarda automaticamente.
+
+## Notas de reproducibilidad
+
+- El split por defecto es Seq-CIFAR-10 con 5 tareas x 2 clases.
+- Seed global configurable desde `configs/cifar10.yaml`.
+- `data/` y `outputs/` no se versionan.
