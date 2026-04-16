@@ -303,6 +303,84 @@ def evaluate_task_il(
     return 100.0 * correct / total
 
 
+@torch.no_grad()
+def evaluate_taskwise_class_il(
+    model: nn.Module,
+    test_loaders: Dict[int, torch.utils.data.DataLoader],
+    seen_task_ids: List[int],
+    device: torch.device,
+    n_tasks: Optional[int] = None,
+) -> List[float]:
+    """Per-task Class-IL accuracy for all seen tasks.
+
+    Returns a dense list of length `n_tasks` with NaN for tasks not yet seen.
+    """
+    if n_tasks is None:
+        n_tasks = len(test_loaders)
+
+    out = [float("nan")] * n_tasks
+    model.eval()
+
+    for task_id in seen_task_ids:
+        loader = test_loaders[task_id]
+        correct = 0
+        total = 0
+
+        for images, labels in loader:
+            images = images.to(device, non_blocking=True)
+            labels = labels.to(device, non_blocking=True)
+            logits = model(images)
+            preds = logits.argmax(dim=1)
+            correct += (preds == labels).sum().item()
+            total += labels.size(0)
+
+        out[task_id] = 0.0 if total == 0 else 100.0 * correct / total
+
+    return out
+
+
+@torch.no_grad()
+def evaluate_taskwise_task_il(
+    model: nn.Module,
+    test_loaders: Dict[int, torch.utils.data.DataLoader],
+    task_classes: List[List[int]],
+    seen_task_ids: List[int],
+    device: torch.device,
+    n_tasks: Optional[int] = None,
+) -> List[float]:
+    """Per-task Task-IL accuracy for all seen tasks.
+
+    Returns a dense list of length `n_tasks` with NaN for tasks not yet seen.
+    """
+    if n_tasks is None:
+        n_tasks = len(task_classes)
+
+    out = [float("nan")] * n_tasks
+    model.eval()
+
+    for task_id in seen_task_ids:
+        allowed_classes = torch.tensor(task_classes[task_id], device=device)
+        loader = test_loaders[task_id]
+        correct = 0
+        total = 0
+
+        for images, labels in loader:
+            images = images.to(device, non_blocking=True)
+            labels = labels.to(device, non_blocking=True)
+
+            logits = model(images)
+            task_logits = logits[:, allowed_classes]
+            task_preds_local = task_logits.argmax(dim=1)
+            task_preds_global = allowed_classes[task_preds_local]
+
+            correct += (task_preds_global == labels).sum().item()
+            total += labels.size(0)
+
+        out[task_id] = 0.0 if total == 0 else 100.0 * correct / total
+
+    return out
+
+
 def _ewc_penalty(
     model: nn.Module,
     ewc_terms: List[Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]],

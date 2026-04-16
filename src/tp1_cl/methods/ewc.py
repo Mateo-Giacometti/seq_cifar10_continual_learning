@@ -14,6 +14,8 @@ from ..train import (
     _train_task_classifier,
     evaluate_class_il,
     evaluate_task_il,
+    evaluate_taskwise_class_il,
+    evaluate_taskwise_task_il,
 )
 
 
@@ -33,7 +35,7 @@ def train_ewc(
     fisher_max_batches: Optional[int] = None,
     task_ids: Optional[List[int]] = None,
     verbose: bool = True,
-) -> Tuple[nn.Module, Dict[str, List[float]]]:
+) -> Tuple[nn.Module, Dict[str, object]]:
     selected_task_ids = _resolve_task_ids(train_loaders, task_ids)
 
     model = ContinualClassifier(
@@ -49,11 +51,14 @@ def train_ewc(
     )
 
     ewc_terms: List[Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]] = []
-    history: Dict[str, List[float]] = {
+    n_tasks = len(task_classes)
+    history: Dict[str, object] = {
         "task_id": [],
         "train_loss": [],
         "class_il": [],
         "task_il": [],
+        "taskwise_class_il_matrix": [],
+        "taskwise_task_il_matrix": [],
     }
 
     seen_task_ids: List[int] = []
@@ -93,6 +98,25 @@ def train_ewc(
         history["train_loss"].append(avg_loss)
         history["class_il"].append(class_il_acc)
         history["task_il"].append(task_il_acc)
+        history["taskwise_class_il_matrix"].append(
+            evaluate_taskwise_class_il(
+                model=model,
+                test_loaders=test_loaders,
+                seen_task_ids=seen_task_ids,
+                device=device,
+                n_tasks=n_tasks,
+            )
+        )
+        history["taskwise_task_il_matrix"].append(
+            evaluate_taskwise_task_il(
+                model=model,
+                test_loaders=test_loaders,
+                task_classes=task_classes,
+                seen_task_ids=seen_task_ids,
+                device=device,
+                n_tasks=n_tasks,
+            )
+        )
 
         if verbose:
             print(

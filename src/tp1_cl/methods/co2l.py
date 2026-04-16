@@ -6,11 +6,17 @@ from typing import Dict, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 
 from ..data import ReservoirReplayBuffer
 from ..models import AsymmetricSupConLoss, ContinualClassifier, IRDLoss, SupConNetwork
-from ..train import _resolve_task_ids, evaluate_class_il, evaluate_task_il
+from ..train import (
+    _resolve_task_ids,
+    evaluate_class_il,
+    evaluate_task_il,
+    evaluate_taskwise_class_il,
+    evaluate_taskwise_task_il,
+)
 
 
 class _TensorDataset(Dataset):
@@ -23,6 +29,19 @@ class _TensorDataset(Dataset):
 
     def __getitem__(self, idx: int):
         return self.images[idx], self.labels[idx]
+
+
+def _make_balanced_sampler(labels: torch.Tensor) -> WeightedRandomSampler:
+    classes, counts = labels.unique(return_counts=True)
+    weight_per_class = 1.0 / counts.float()
+    weights = weight_per_class[
+        (labels.unsqueeze(1) == classes.unsqueeze(0)).int().argmax(dim=1)
+    ]
+    return WeightedRandomSampler(
+        weights=weights.tolist(),
+        num_samples=len(weights),
+        replacement=True,
+    )
 
 
 def _make_co2l_scheduler(
@@ -41,10 +60,18 @@ def _make_co2l_scheduler(
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
 
 
+def _augment_buffer_batch(images: torch.Tensor) -> torch.Tensor:
+    flip_mask = torch.rand(images.size(0), device=images.device) > 0.5
+    out = images.clone()
+    out[flip_mask] = torch.flip(images[flip_mask], dims=[-1])
+    return out
+
+
 def _train_linear_head_balanced(
     backbone: nn.Module,
     feat_dim: int,
-    train_loader: DataLoader,
+    buffer_images: torch.Tensor,
+    buffer_labels: torch.Tensor,
     test_loaders: Dict[int, DataLoader],
     task_classes: List[List[int]],
     seen_task_ids: List[int],
@@ -54,6 +81,7 @@ def _train_linear_head_balanced(
     lr: float,
     milestones: List[int],
     gamma: float,
+    batch_size: int = 256,
 ) -> ContinualClassifier:
     model = ContinualClassifier(
         backbone=deepcopy(backbone),
@@ -63,6 +91,15 @@ def _train_linear_head_balanced(
     model.backbone.eval()
     for p in model.backbone.parameters():
         p.requires_grad = False
+
+    eval_ds = _TensorDataset(buffer_images, buffer_labels)
+    sampler = _make_balanced_sampler(buffer_labels)
+    eval_loader = DataLoader(
+        eval_ds,
+        batch_size=batch_size,
+        sampler=sampler,
+        num_workers=0,
+    )
 
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(
@@ -79,7 +116,7 @@ def _train_linear_head_balanced(
 
     for _ in range(epochs):
         model.classifier.train()
-        for images, labels in train_loader:
+        for images, labels in eval_loader:
             images = images.to(device, non_blocking=True)
             labels = labels.to(device, non_blocking=True)
             with torch.no_grad():
@@ -123,10 +160,16 @@ def train_co2l(
     eval_linear_lr: float = 1.0,
     eval_linear_milestones: Optional[List[int]] = None,
     eval_linear_gamma: float = 0.2,
+    train_loaders_eval: Optional[Dict[int, DataLoader]] = None,
     task_ids: Optional[List[int]] = None,
     seed: int = 42,
+    max_replay_batch_size: Optional[int] = None,
     verbose: bool = True,
-) -> Tuple[SupConNetwork, Dict[str, List[float]]]:
+) -> Tuple[SupConNetwork, Dict[str, object]]:
+    if eval_linear_milestones is None:
+        eval_linear_milestones = [60, 75, 90]
+
+    n_tasks = len(task_classes)
     selected_task_ids = _resolve_task_ids(train_loaders, task_ids)
     model = SupConNetwork(
         backbone=deepcopy(backbone),
@@ -138,12 +181,14 @@ def train_co2l(
     ird_loss = IRDLoss(kappa=kappa, kappa_star=kappa_star)
     buffer = ReservoirReplayBuffer(capacity=buffer_size, seed=seed)
 
-    history: Dict[str, List[float]] = {
+    history: Dict[str, object] = {
         "task_id": [],
         "train_loss": [],
         "class_il": [],
         "task_il": [],
         "ird_loss": [],
+        "taskwise_class_il_matrix": [],
+        "taskwise_task_il_matrix": [],
     }
 
     seen_task_ids: List[int] = []
@@ -157,39 +202,67 @@ def train_co2l(
             momentum=momentum,
             weight_decay=weight_decay,
         )
-        scheduler = _make_co2l_scheduler(optimizer, epochs=epochs, warmup_epochs=warmup_epochs)
+        scheduler = _make_co2l_scheduler(
+            optimizer,
+            epochs=epochs,
+            warmup_epochs=warmup_epochs,
+        )
 
-        avg_epoch_loss = 0.0
-        avg_epoch_ird = 0.0
+        epoch_losses: List[float] = []
+        epoch_irds: List[float] = []
 
         for epoch in range(1, epochs + 1):
             model.train()
             running_loss = 0.0
             running_ird = 0.0
 
-            for images_curr, labels_curr in train_loaders[task_id]:
-                images_curr = images_curr.to(device, non_blocking=True)
-                labels_curr = labels_curr.to(device, non_blocking=True)
+            for batch in train_loaders[task_id]:
+                if len(batch) == 3:
+                    view1_curr, view2_curr, labels_curr = batch
+                    view1_curr = view1_curr.to(device, non_blocking=True)
+                    view2_curr = view2_curr.to(device, non_blocking=True)
+                    labels_curr = labels_curr.to(device, non_blocking=True)
+                    bsz_curr = labels_curr.size(0)
+                elif len(batch) == 2:
+                    images_curr, labels_curr = batch
+                    images_curr = images_curr.to(device, non_blocking=True)
+                    labels_curr = labels_curr.to(device, non_blocking=True)
+                    bsz_curr = labels_curr.size(0)
+                    noise1 = 0.001 * torch.randn_like(images_curr)
+                    noise2 = 0.001 * torch.randn_like(images_curr)
+                    view1_curr = images_curr + noise1
+                    view2_curr = images_curr + noise2
+                else:
+                    raise ValueError("train loader batch must be (img,label) or (view1,view2,label)")
 
                 if len(buffer) > 0:
-                    images_buf, labels_buf = buffer.sample(images_curr.size(0))
+                    replay_batch = bsz_curr
+                    if max_replay_batch_size is not None:
+                        replay_batch = min(replay_batch, max_replay_batch_size)
+
+                    images_buf, labels_buf = buffer.sample(replay_batch)
                     images_buf = images_buf.to(device, non_blocking=True)
                     labels_buf = labels_buf.to(device, non_blocking=True)
-                    images_all = torch.cat([images_curr, images_buf], dim=0)
+
+                    view1_buf = _augment_buffer_batch(images_buf)
+                    view2_buf = _augment_buffer_batch(images_buf)
+
+                    view1_all = torch.cat([view1_curr, view1_buf], dim=0)
+                    view2_all = torch.cat([view2_curr, view2_buf], dim=0)
                     labels_all = torch.cat([labels_curr, labels_buf], dim=0)
-                    current_mask = torch.zeros(images_all.size(0), dtype=torch.bool, device=device)
-                    current_mask[: images_curr.size(0)] = True
+                    current_mask = torch.zeros(
+                        bsz_curr + replay_batch,
+                        dtype=torch.bool,
+                        device=device,
+                    )
+                    current_mask[:bsz_curr] = True
                 else:
-                    images_all = images_curr
+                    view1_all = view1_curr
+                    view2_all = view2_curr
                     labels_all = labels_curr
-                    current_mask = torch.ones(images_all.size(0), dtype=torch.bool, device=device)
+                    current_mask = torch.ones(bsz_curr, dtype=torch.bool, device=device)
 
-                noise1 = 0.001 * torch.randn_like(images_all)
-                noise2 = 0.001 * torch.randn_like(images_all)
-                view1 = images_all + noise1
-                view2 = images_all + noise2
-
-                batch_images = torch.cat([view1, view2], dim=0)
+                batch_images = torch.cat([view1_all, view2_all], dim=0)
                 _, proj_all = model(batch_images)
                 bsz_total = labels_all.size(0)
                 proj_views = proj_all.view(2, bsz_total, -1).permute(1, 0, 2).contiguous()
@@ -212,39 +285,35 @@ def train_co2l(
                 running_ird += loss_ird_batch.item()
 
             scheduler.step()
-            avg_epoch_loss = running_loss / max(1, len(train_loaders[task_id]))
-            avg_epoch_ird = running_ird / max(1, len(train_loaders[task_id]))
+            n_batches = max(1, len(train_loaders[task_id]))
+            epoch_loss = running_loss / n_batches
+            epoch_ird = running_ird / n_batches
+            epoch_losses.append(epoch_loss)
+            epoch_irds.append(epoch_ird)
 
             if verbose and (epoch % 10 == 0 or epoch == epochs):
                 print(
                     f"Co2L | Task {task_id} | Epoch {epoch:03d}/{epochs} | "
-                    f"loss={avg_epoch_loss:.4f} | ird={avg_epoch_ird:.4f}"
+                    f"loss={epoch_loss:.4f} | ird={epoch_ird:.4f}"
                 )
 
-        for images, labels in train_loaders[task_id]:
+        past_model = deepcopy(model).to(device).eval()
+        for p in past_model.parameters():
+            p.requires_grad = False
+
+        buffer_source = train_loaders_eval if train_loaders_eval is not None else train_loaders
+        for images, labels in buffer_source[task_id]:
             buffer.add(images, labels)
 
         seen_task_ids.append(task_id)
 
-        if len(buffer) > 0:
-            all_images = torch.stack(buffer.images, dim=0)
-            all_labels = torch.tensor(buffer.labels, dtype=torch.long)
-            eval_ds = _TensorDataset(all_images, all_labels)
-            eval_loader = DataLoader(
-                eval_ds,
-                batch_size=train_loaders[task_id].batch_size or 256,
-                shuffle=True,
-            )
-        else:
-            eval_loader = train_loaders[task_id]
-
-        if eval_linear_milestones is None:
-            eval_linear_milestones = [60, 75, 90]
-
+        buffer_images = torch.stack(buffer.images, dim=0)
+        buffer_labels = torch.tensor(buffer.labels, dtype=torch.long)
         eval_model = _train_linear_head_balanced(
             backbone=model.backbone,
             feat_dim=feat_dim,
-            train_loader=eval_loader,
+            buffer_images=buffer_images,
+            buffer_labels=buffer_labels,
             test_loaders=test_loaders,
             task_classes=task_classes,
             seen_task_ids=seen_task_ids,
@@ -254,24 +323,40 @@ def train_co2l(
             lr=eval_linear_lr,
             milestones=eval_linear_milestones,
             gamma=eval_linear_gamma,
+            batch_size=256,
         )
         class_il_acc = float(eval_model.class_il_metric)  # type: ignore[attr-defined]
         task_il_acc = float(eval_model.task_il_metric)  # type: ignore[attr-defined]
 
         history["task_id"].append(float(task_id))
-        history["train_loss"].append(avg_epoch_loss)
+        history["train_loss"].append(sum(epoch_losses) / len(epoch_losses))
         history["class_il"].append(class_il_acc)
         history["task_il"].append(task_il_acc)
-        history["ird_loss"].append(avg_epoch_ird)
-
-        past_model = deepcopy(model).to(device).eval()
-        for p in past_model.parameters():
-            p.requires_grad = False
+        history["ird_loss"].append(sum(epoch_irds) / len(epoch_irds))
+        history["taskwise_class_il_matrix"].append(
+            evaluate_taskwise_class_il(
+                model=eval_model,
+                test_loaders=test_loaders,
+                seen_task_ids=seen_task_ids,
+                device=device,
+                n_tasks=n_tasks,
+            )
+        )
+        history["taskwise_task_il_matrix"].append(
+            evaluate_taskwise_task_il(
+                model=eval_model,
+                test_loaders=test_loaders,
+                task_classes=task_classes,
+                seen_task_ids=seen_task_ids,
+                device=device,
+                n_tasks=n_tasks,
+            )
+        )
 
         if verbose:
             print(
-                f"Task {task_id} done (Co2L) | Class-IL={class_il_acc:.2f}% | "
-                f"Task-IL={task_il_acc:.2f}%"
+                f"Task {task_id} done (Co2L) | "
+                f"Class-IL={class_il_acc:.2f}% | Task-IL={task_il_acc:.2f}%"
             )
 
     return model, history

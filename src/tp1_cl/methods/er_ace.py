@@ -9,7 +9,13 @@ import torch.nn.functional as F
 
 from ..data import ReservoirReplayBuffer
 from ..models import ContinualClassifier
-from ..train import _resolve_task_ids, evaluate_class_il, evaluate_task_il
+from ..train import (
+    _resolve_task_ids,
+    evaluate_class_il,
+    evaluate_task_il,
+    evaluate_taskwise_class_il,
+    evaluate_taskwise_task_il,
+)
 
 
 def _cross_entropy_on_class_subset(
@@ -48,7 +54,7 @@ def train_er_ace(
     task_ids: Optional[List[int]] = None,
     seed: int = 42,
     verbose: bool = True,
-) -> Tuple[nn.Module, Dict[str, List[float]]]:
+) -> Tuple[nn.Module, Dict[str, object]]:
     selected_task_ids = _resolve_task_ids(train_loaders, task_ids)
 
     model = ContinualClassifier(
@@ -64,13 +70,16 @@ def train_er_ace(
     )
 
     buffer = ReservoirReplayBuffer(capacity=buffer_size, seed=seed)
-    history: Dict[str, List[float]] = {
+    n_tasks = len(task_classes)
+    history: Dict[str, object] = {
         "task_id": [],
         "train_loss": [],
         "incoming_loss": [],
         "replay_loss": [],
         "class_il": [],
         "task_il": [],
+        "taskwise_class_il_matrix": [],
+        "taskwise_task_il_matrix": [],
     }
 
     seen_task_ids: List[int] = []
@@ -164,6 +173,25 @@ def train_er_ace(
         history["replay_loss"].append(avg_replay_loss)
         history["class_il"].append(class_il_acc)
         history["task_il"].append(task_il_acc)
+        history["taskwise_class_il_matrix"].append(
+            evaluate_taskwise_class_il(
+                model=model,
+                test_loaders=test_loaders,
+                seen_task_ids=seen_task_ids,
+                device=device,
+                n_tasks=n_tasks,
+            )
+        )
+        history["taskwise_task_il_matrix"].append(
+            evaluate_taskwise_task_il(
+                model=model,
+                test_loaders=test_loaders,
+                task_classes=task_classes,
+                seen_task_ids=seen_task_ids,
+                device=device,
+                n_tasks=n_tasks,
+            )
+        )
 
         if verbose:
             print(

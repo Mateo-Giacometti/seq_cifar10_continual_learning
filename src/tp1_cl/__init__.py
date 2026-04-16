@@ -32,12 +32,24 @@ from .train import (
     evaluate_class_il,
     evaluate_linear,
     evaluate_task_il,
+    evaluate_taskwise_class_il,
+    evaluate_taskwise_task_il,
     extract_features,
     set_seed,
     train_ewc,
     train_linear_head,
     train_naive_finetuning,
     train_supcon,
+)
+from .viz import (
+    compute_forgetting_matrix,
+    plot_cl_metrics,
+    plot_embedding_snapshots,
+    plot_forgetting_by_task,
+    plot_forgetting_curves,
+    plot_linear_history,
+    plot_methods_over_tasks,
+    plot_supcon_loss,
 )
 
 __all__ = [
@@ -66,6 +78,8 @@ __all__ = [
     "evaluate_class_il",
     "evaluate_linear",
     "evaluate_task_il",
+    "evaluate_taskwise_class_il",
+    "evaluate_taskwise_task_il",
     "extract_features",
     "set_seed",
     "train_ewc",
@@ -77,4 +91,12 @@ __all__ = [
     "train_naive_finetuning",
     "train_naive_finetuning_method",
     "train_supcon",
+    "plot_supcon_loss",
+    "plot_embedding_snapshots",
+    "plot_linear_history",
+    "plot_cl_metrics",
+    "plot_methods_over_tasks",
+    "plot_forgetting_curves",
+    "plot_forgetting_by_task",
+    "compute_forgetting_matrix",
 ]

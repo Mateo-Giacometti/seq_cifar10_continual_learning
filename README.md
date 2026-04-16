@@ -73,6 +73,11 @@ Las figuras se guardan en `outputs/imgs/` (ademas de mostrarse en notebook):
 - `lwf_cl_metrics.png`
 - `co2l_cl_metrics.png`
 - `er_ace_cl_metrics.png`
+- `methods_over_tasks.png`
+- `forgetting_class_il.png`
+- `forgetting_task_il.png`
+- `forgetting_by_task_class_il_<metodo>.png`
+- `forgetting_by_task_task_il_<metodo>.png`
 - `methods_comparison.png`
 
 Adicionalmente se exporta una tabla comparativa en:
