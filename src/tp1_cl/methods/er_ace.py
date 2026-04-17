@@ -18,6 +18,19 @@ from ..train import (
 )
 
 
+def _append_baseline_row(history: Dict[str, object], baseline: Optional[Dict[str, object]]) -> None:
+    if baseline is None:
+        return
+    history["task_id"].append(float(baseline["task_id"]))
+    history["train_loss"].append(float(baseline.get("train_loss", float("nan"))))
+    history["incoming_loss"].append(0.0)
+    history["replay_loss"].append(0.0)
+    history["class_il"].append(float(baseline["class_il"]))
+    history["task_il"].append(float(baseline["task_il"]))
+    history["taskwise_class_il_matrix"].append(list(baseline["taskwise_class_il_row"]))
+    history["taskwise_task_il_matrix"].append(list(baseline["taskwise_task_il_row"]))
+
+
 def _cross_entropy_on_class_subset(
     logits: torch.Tensor,
     labels: torch.Tensor,
@@ -53,15 +66,23 @@ def train_er_ace(
     replay_weight: float = 1.0,
     task_ids: Optional[List[int]] = None,
     seed: int = 42,
+    initial_model: Optional[ContinualClassifier] = None,
+    initial_seen_task_ids: Optional[List[int]] = None,
+    initial_buffer: Optional[ReservoirReplayBuffer] = None,
+    baseline_payload: Optional[Dict[str, object]] = None,
     verbose: bool = True,
 ) -> Tuple[nn.Module, Dict[str, object]]:
     selected_task_ids = _resolve_task_ids(train_loaders, task_ids)
 
-    model = ContinualClassifier(
-        backbone=deepcopy(backbone),
-        feat_dim=feat_dim,
-        num_classes=num_classes,
-    ).to(device)
+    model = (
+        deepcopy(initial_model).to(device)
+        if initial_model is not None
+        else ContinualClassifier(
+            backbone=deepcopy(backbone),
+            feat_dim=feat_dim,
+            num_classes=num_classes,
+        ).to(device)
+    )
     optimizer = torch.optim.SGD(
         model.parameters(),
         lr=lr,
@@ -69,7 +90,13 @@ def train_er_ace(
         weight_decay=weight_decay,
     )
 
-    buffer = ReservoirReplayBuffer(capacity=buffer_size, seed=seed)
+    if initial_buffer is not None:
+        buffer = ReservoirReplayBuffer(capacity=initial_buffer.capacity, seed=seed)
+        buffer.images = [img.clone() for img in initial_buffer.images]
+        buffer.labels = list(initial_buffer.labels)
+        buffer.seen = initial_buffer.seen
+    else:
+        buffer = ReservoirReplayBuffer(capacity=buffer_size, seed=seed)
     n_tasks = len(task_classes)
     history: Dict[str, object] = {
         "task_id": [],
@@ -82,7 +109,9 @@ def train_er_ace(
         "taskwise_task_il_matrix": [],
     }
 
-    seen_task_ids: List[int] = []
+    _append_baseline_row(history, baseline_payload)
+
+    seen_task_ids: List[int] = [] if initial_seen_task_ids is None else list(initial_seen_task_ids)
 
     for task_id in selected_task_ids:
         old_class_ids = sorted(

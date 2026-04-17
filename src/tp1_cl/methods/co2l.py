@@ -19,6 +19,26 @@ from ..train import (
 )
 
 
+def _append_baseline_row(history: Dict[str, object], baseline: Optional[Dict[str, object]]) -> None:
+    if baseline is None:
+        return
+    history["task_id"].append(float(baseline["task_id"]))
+    history["train_loss"].append(float(baseline.get("train_loss", float("nan"))))
+    history["class_il"].append(float(baseline["class_il"]))
+    history["task_il"].append(float(baseline["task_il"]))
+    history["ird_loss"].append(0.0)
+    history["taskwise_class_il_matrix"].append(list(baseline["taskwise_class_il_row"]))
+    history["taskwise_task_il_matrix"].append(list(baseline["taskwise_task_il_row"]))
+
+
+def _clone_replay_buffer(source: ReservoirReplayBuffer, seed: int) -> ReservoirReplayBuffer:
+    out = ReservoirReplayBuffer(capacity=source.capacity, seed=seed)
+    out.images = [img.clone() for img in source.images]
+    out.labels = list(source.labels)
+    out.seen = source.seen
+    return out
+
+
 class _TensorDataset(Dataset):
     def __init__(self, images: torch.Tensor, labels: torch.Tensor) -> None:
         self.images = images
@@ -164,6 +184,11 @@ def train_co2l(
     task_ids: Optional[List[int]] = None,
     seed: int = 42,
     max_replay_batch_size: Optional[int] = None,
+    initial_model: Optional[SupConNetwork] = None,
+    initial_seen_task_ids: Optional[List[int]] = None,
+    initial_past_model: Optional[SupConNetwork] = None,
+    initial_buffer: Optional[ReservoirReplayBuffer] = None,
+    baseline_payload: Optional[Dict[str, object]] = None,
     verbose: bool = True,
 ) -> Tuple[SupConNetwork, Dict[str, object]]:
     if eval_linear_milestones is None:
@@ -171,15 +196,22 @@ def train_co2l(
 
     n_tasks = len(task_classes)
     selected_task_ids = _resolve_task_ids(train_loaders, task_ids)
-    model = SupConNetwork(
-        backbone=deepcopy(backbone),
-        feat_dim=feat_dim,
-        proj_dim=proj_dim,
-    ).to(device)
+    model = (
+        deepcopy(initial_model).to(device)
+        if initial_model is not None
+        else SupConNetwork(
+            backbone=deepcopy(backbone),
+            feat_dim=feat_dim,
+            proj_dim=proj_dim,
+        ).to(device)
+    )
 
     asym_loss = AsymmetricSupConLoss(temperature=temperature)
     ird_loss = IRDLoss(kappa=kappa, kappa_star=kappa_star)
-    buffer = ReservoirReplayBuffer(capacity=buffer_size, seed=seed)
+    if initial_buffer is not None:
+        buffer = _clone_replay_buffer(initial_buffer, seed=seed)
+    else:
+        buffer = ReservoirReplayBuffer(capacity=buffer_size, seed=seed)
 
     history: Dict[str, object] = {
         "task_id": [],
@@ -191,11 +223,19 @@ def train_co2l(
         "taskwise_task_il_matrix": [],
     }
 
-    seen_task_ids: List[int] = []
-    past_model: Optional[SupConNetwork] = None
+    _append_baseline_row(history, baseline_payload)
+
+    seen_task_ids: List[int] = [] if initial_seen_task_ids is None else list(initial_seen_task_ids)
+    past_model: Optional[SupConNetwork] = (
+        None if initial_past_model is None else deepcopy(initial_past_model).to(device)
+    )
+    if past_model is not None:
+        past_model.eval()
+        for p in past_model.parameters():
+            p.requires_grad = False
 
     for task_id in selected_task_ids:
-        epochs = epochs_task0 if task_id == selected_task_ids[0] else epochs_per_task
+        epochs = epochs_task0 if task_id == 0 else epochs_per_task
         optimizer = torch.optim.SGD(
             model.parameters(),
             lr=lr,

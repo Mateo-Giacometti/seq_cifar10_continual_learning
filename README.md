@@ -52,6 +52,9 @@ pip install -r requirements.txt
 1. Abrir `tp1.ipynb` desde la raiz del repositorio.
 2. Ejecutar las celdas en orden.
 3. El notebook usa `configs/cifar10.yaml` como fuente unica de hiperparametros.
+4. Protocolo activo: `from_task0_pretrained`.
+   - La Task 0 se entrena en `4.2`.
+   - Los metodos de CL (`4.3.x`) arrancan desde Task 1 (`task_ids=[1,2,3,4]`) reutilizando estado inicial de Task 0.
 
 ## Checkpointing
 
@@ -84,6 +87,7 @@ Adicionalmente se exporta una tabla comparativa en:
 - `outputs/metrics/methods_comparison.csv`
 
 Si el checkpoint existe, el notebook carga; si no existe, entrena y guarda automaticamente.
+Si existe pero no cumple el protocolo `from_task0_pretrained`, se re-entrena y se sobre-escribe.
 
 ## Notas de reproducibilidad
 

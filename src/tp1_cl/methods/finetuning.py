@@ -17,6 +17,17 @@ from ..train import (
 )
 
 
+def _append_baseline_row(history: Dict[str, object], baseline: Optional[Dict[str, object]]) -> None:
+    if baseline is None:
+        return
+    history["task_id"].append(float(baseline["task_id"]))
+    history["train_loss"].append(float(baseline.get("train_loss", float("nan"))))
+    history["class_il"].append(float(baseline["class_il"]))
+    history["task_il"].append(float(baseline["task_il"]))
+    history["taskwise_class_il_matrix"].append(list(baseline["taskwise_class_il_row"]))
+    history["taskwise_task_il_matrix"].append(list(baseline["taskwise_task_il_row"]))
+
+
 def train_naive_finetuning(
     backbone: nn.Module,
     feat_dim: int,
@@ -30,15 +41,22 @@ def train_naive_finetuning(
     momentum: float = 0.9,
     weight_decay: float = 1e-4,
     task_ids: Optional[List[int]] = None,
+    initial_model: Optional[ContinualClassifier] = None,
+    initial_seen_task_ids: Optional[List[int]] = None,
+    baseline_payload: Optional[Dict[str, object]] = None,
     verbose: bool = True,
 ) -> Tuple[nn.Module, Dict[str, object]]:
     selected_task_ids = _resolve_task_ids(train_loaders, task_ids)
 
-    model = ContinualClassifier(
-        backbone=deepcopy(backbone),
-        feat_dim=feat_dim,
-        num_classes=num_classes,
-    ).to(device)
+    model = (
+        deepcopy(initial_model).to(device)
+        if initial_model is not None
+        else ContinualClassifier(
+            backbone=deepcopy(backbone),
+            feat_dim=feat_dim,
+            num_classes=num_classes,
+        ).to(device)
+    )
     optimizer = torch.optim.SGD(
         model.parameters(),
         lr=lr,
@@ -56,7 +74,9 @@ def train_naive_finetuning(
         "taskwise_task_il_matrix": [],
     }
 
-    seen_task_ids: List[int] = []
+    _append_baseline_row(history, baseline_payload)
+
+    seen_task_ids: List[int] = [] if initial_seen_task_ids is None else list(initial_seen_task_ids)
     for task_id in selected_task_ids:
         avg_loss = _train_task_classifier(
             model=model,

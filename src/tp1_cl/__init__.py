@@ -2,6 +2,12 @@
 
 from .checkpoints import ensure_checkpoint_dir, load_checkpoint, save_checkpoint
 from .config import ConfigNode, load_config
+from .bootstrap import (
+    build_initial_classifier_from_linear_head,
+    build_task0_ewc_terms,
+    build_task0_replay_buffer,
+    task0_baseline_payload,
+)
 from .data import (
     CIFAR10_CLASSES,
     CIFAR10TaskDataset,
@@ -58,6 +64,10 @@ __all__ = [
     "ensure_checkpoint_dir",
     "load_checkpoint",
     "save_checkpoint",
+    "build_task0_replay_buffer",
+    "build_task0_ewc_terms",
+    "build_initial_classifier_from_linear_head",
+    "task0_baseline_payload",
     "CIFAR10_CLASSES",
     "CIFAR10TaskDataset",
     "ContrastiveTaskDataset",
