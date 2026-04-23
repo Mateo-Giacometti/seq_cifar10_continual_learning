@@ -167,6 +167,16 @@ class SeqCIFAR10Builder:
         self.test_indices_by_task = self._build_task_indices(self.test_base.targets)
 
     def _resolve_split(self) -> Tuple[List[int], List[List[int]]]:
+        """
+        Resolve the class split for the tasks.
+
+        Returns
+        -------
+        class_order : List[int]
+            The order of classes for each task.
+        task_classes : List[List[int]]
+            The class split for each task.
+        """
         if self.config.task_classes is not None:
             task_classes = [list(task) for task in self.config.task_classes]
             class_order = [cls_id for task in task_classes for cls_id in task]
@@ -213,6 +223,19 @@ class SeqCIFAR10Builder:
         return class_order, task_classes
 
     def _build_task_indices(self, targets: List[int]) -> Dict[int, List[int]]:
+        """
+        Build the indices for each task.
+
+        Parameters
+        ----------
+        targets : List[int]
+            The labels for each sample.
+
+        Returns
+        -------
+        task_indices : Dict[int, List[int]]
+            The indices for each task.
+        """
         task_indices: Dict[int, List[int]] = {}
         for task_id, classes in enumerate(self.task_classes):
             class_set = set(classes)

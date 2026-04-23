@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Literal, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -83,12 +83,14 @@ def build_task0_ewc_terms(
     train_loader_task0: torch.utils.data.DataLoader,
     device: torch.device,
     fisher_max_batches: Optional[int] = None,
+    fisher_loss_mode: Literal["ce", "nll_true", "nll_pred"] = "ce",
 ) -> List[Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]]:
     fisher_diag = _compute_fisher_diagonal(
         model=model,
         loader=train_loader_task0,
         device=device,
         max_batches=fisher_max_batches,
+        fisher_loss_mode=fisher_loss_mode,
     )
     params_star = _snapshot_parameters(model)
     return [(fisher_diag, params_star)]

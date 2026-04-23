@@ -20,11 +20,7 @@ from .data import (
     TwoCropTransform,
     build_transforms,
 )
-from .methods import train_co2l as train_co2l_method
-from .methods import train_er_ace as train_er_ace_method
-from .methods import train_ewc as train_ewc_method
-from .methods import train_lwf as train_lwf_method
-from .methods import train_naive_finetuning as train_naive_finetuning_method
+from .methods import train_co2l, train_er_ace, train_ewc, train_lwf, train_naive_finetuning
 from .models import (
     ContinualClassifier,
     SupConLoss,
@@ -41,33 +37,45 @@ from .train import (
     evaluate_taskwise_class_il,
     evaluate_taskwise_task_il,
     extract_features,
+    get_confusion_matrix,
     set_seed,
-    train_ewc,
     train_linear_head,
-    train_naive_finetuning,
     train_supcon,
 )
 from .viz import (
+    compute_average_over_past,
+    compute_bwt_matrix,
+    compute_final_transfer_metrics,
     compute_forgetting_matrix,
     plot_cl_metrics,
+    plot_bwt_curves,
+    plot_confusion_matrix,
+    plot_cl_training_losses,
     plot_embedding_snapshots,
+    plot_final_accuracy_bars,
+    plot_final_embeddings_comparison,
     plot_forgetting_by_task,
     plot_forgetting_curves,
     plot_linear_history,
-    plot_methods_over_tasks,
+    plot_methods_comparison_class_il,
+    plot_methods_comparison_task_il,
     plot_supcon_loss,
+    plot_taskwise_heatmap,
 )
 
 __all__ = [
+    # Config & checkpoints
     "ConfigNode",
     "load_config",
     "ensure_checkpoint_dir",
     "load_checkpoint",
     "save_checkpoint",
+    # Bootstrap
     "build_task0_replay_buffer",
     "build_task0_ewc_terms",
     "build_initial_classifier_from_linear_head",
     "task0_baseline_payload",
+    # Data
     "CIFAR10_CLASSES",
     "CIFAR10TaskDataset",
     "ContrastiveTaskDataset",
@@ -78,6 +86,7 @@ __all__ = [
     "TransformConfig",
     "TwoCropTransform",
     "build_transforms",
+    # Models & losses
     "ContinualClassifier",
     "SupConLoss",
     "SupConNetwork",
@@ -85,28 +94,41 @@ __all__ = [
     "IRDLoss",
     "build_cifar_resnet",
     "build_cifar_resnet18",
+    # Training & evaluation
     "evaluate_class_il",
     "evaluate_linear",
     "evaluate_task_il",
     "evaluate_taskwise_class_il",
     "evaluate_taskwise_task_il",
     "extract_features",
+    "get_confusion_matrix",
     "set_seed",
-    "train_ewc",
-    "train_co2l_method",
-    "train_er_ace_method",
-    "train_ewc_method",
-    "train_lwf_method",
     "train_linear_head",
-    "train_naive_finetuning",
-    "train_naive_finetuning_method",
     "train_supcon",
+    # CL methods
+    "train_co2l",
+    "train_er_ace",
+    "train_ewc",
+    "train_lwf",
+    "train_naive_finetuning",
+    # Visualization
     "plot_supcon_loss",
     "plot_embedding_snapshots",
     "plot_linear_history",
     "plot_cl_metrics",
-    "plot_methods_over_tasks",
+    "plot_methods_comparison_class_il",
+    "plot_methods_comparison_task_il",
     "plot_forgetting_curves",
     "plot_forgetting_by_task",
+    "plot_bwt_curves",
+    "plot_taskwise_heatmap",
+    "plot_cl_training_losses",
+    "plot_final_embeddings_comparison",
+    "plot_final_accuracy_bars",
+    "plot_confusion_matrix",
+    # Metrics
     "compute_forgetting_matrix",
+    "compute_bwt_matrix",
+    "compute_average_over_past",
+    "compute_final_transfer_metrics",
 ]

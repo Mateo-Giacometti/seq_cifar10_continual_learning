@@ -144,6 +144,9 @@ class IRDLoss(nn.Module):
         self.kappa_star = kappa_star
 
     def _relation_probs(self, z: torch.Tensor, temperature: float) -> torch.Tensor:
+        if z.size(0) <= 1:
+            return torch.ones((z.size(0), z.size(0)), device=z.device, dtype=z.dtype)
+
         z = F.normalize(z, dim=1)
         sim = torch.matmul(z, z.T) / temperature
         sim = sim - sim.max(dim=1, keepdim=True)[0].detach()
@@ -153,6 +156,9 @@ class IRDLoss(nn.Module):
         return F.softmax(sim, dim=1)
 
     def forward(self, z_current: torch.Tensor, z_past: torch.Tensor) -> torch.Tensor:
+        if z_current.size(0) <= 1:
+            return torch.tensor(0.0, device=z_current.device, dtype=z_current.dtype)
+
         p_past = self._relation_probs(z_past.detach(), self.kappa_star)
         p_curr = self._relation_probs(z_current, self.kappa)
         return -(p_past * torch.log(p_curr + 1e-12)).sum(dim=1).mean()

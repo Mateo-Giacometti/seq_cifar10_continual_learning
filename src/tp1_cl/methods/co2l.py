@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import math
+import warnings
 from copy import deepcopy
 from typing import Dict, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 
 from ..data import ReservoirReplayBuffer
@@ -19,16 +21,7 @@ from ..train import (
 )
 
 
-def _append_baseline_row(history: Dict[str, object], baseline: Optional[Dict[str, object]]) -> None:
-    if baseline is None:
-        return
-    history["task_id"].append(float(baseline["task_id"]))
-    history["train_loss"].append(float(baseline.get("train_loss", float("nan"))))
-    history["class_il"].append(float(baseline["class_il"]))
-    history["task_il"].append(float(baseline["task_il"]))
-    history["ird_loss"].append(0.0)
-    history["taskwise_class_il_matrix"].append(list(baseline["taskwise_class_il_row"]))
-    history["taskwise_task_il_matrix"].append(list(baseline["taskwise_task_il_row"]))
+from ._utils import append_baseline_row
 
 
 def _clone_replay_buffer(source: ReservoirReplayBuffer, seed: int) -> ReservoirReplayBuffer:
@@ -80,18 +73,143 @@ def _make_co2l_scheduler(
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
 
 
-def _augment_buffer_batch(images: torch.Tensor) -> torch.Tensor:
-    flip_mask = torch.rand(images.size(0), device=images.device) > 0.5
+def _random_resized_crop_batch(
+    images: torch.Tensor,
+    scale: Tuple[float, float] = (0.2, 1.0),
+    ratio: Tuple[float, float] = (0.75, 1.3333333333333333),
+) -> torch.Tensor:
+    if images.dim() != 4:
+        raise ValueError("Expected images with shape (B, C, H, W)")
+
+    bsz, _, height, width = images.shape
     out = images.clone()
-    out[flip_mask] = torch.flip(images[flip_mask], dims=[-1])
+    area = float(height * width)
+
+    for i in range(bsz):
+        cropped = False
+        for _ in range(10):
+            target_area = area * torch.empty((), device=images.device).uniform_(
+                scale[0], scale[1]
+            ).item()
+            aspect_ratio = torch.empty((), device=images.device).uniform_(
+                ratio[0], ratio[1]
+            ).item()
+
+            crop_h = int(round(math.sqrt(target_area / aspect_ratio)))
+            crop_w = int(round(math.sqrt(target_area * aspect_ratio)))
+
+            if 0 < crop_h <= height and 0 < crop_w <= width:
+                top = int(
+                    torch.randint(0, height - crop_h + 1, (1,), device=images.device).item()
+                )
+                left = int(
+                    torch.randint(0, width - crop_w + 1, (1,), device=images.device).item()
+                )
+                crop = images[i : i + 1, :, top : top + crop_h, left : left + crop_w]
+                out[i] = F.interpolate(
+                    crop,
+                    size=(height, width),
+                    mode="bilinear",
+                    align_corners=False,
+                )[0]
+                cropped = True
+                break
+
+        if not cropped:
+            out[i] = images[i]
+
     return out
+
+
+def _augment_buffer_batch(images: torch.Tensor) -> torch.Tensor:
+    if images.dim() != 4:
+        raise ValueError("Expected images with shape (B, C, H, W)")
+    if images.size(0) == 0:
+        return images
+
+    out = _random_resized_crop_batch(images, scale=(0.2, 1.0))
+
+    flip_mask = torch.rand(out.size(0), device=out.device) < 0.5
+    if torch.any(flip_mask):
+        out[flip_mask] = torch.flip(out[flip_mask], dims=[-1])
+
+    jitter_mask = torch.rand(out.size(0), device=out.device) < 0.8
+    if torch.any(jitter_mask):
+        idx = torch.where(jitter_mask)[0]
+        x = out[idx]
+
+        brightness = torch.empty((x.size(0), 1, 1, 1), device=x.device, dtype=x.dtype).uniform_(
+            0.6, 1.4
+        )
+        x = x * brightness
+
+        mean = x.mean(dim=(1, 2, 3), keepdim=True)
+        contrast = torch.empty((x.size(0), 1, 1, 1), device=x.device, dtype=x.dtype).uniform_(
+            0.6, 1.4
+        )
+        x = (x - mean) * contrast + mean
+
+        coeff = torch.tensor([0.2989, 0.5870, 0.1140], device=x.device, dtype=x.dtype).view(
+            1, 3, 1, 1
+        )
+        gray = (x * coeff).sum(dim=1, keepdim=True)
+        saturation = torch.empty((x.size(0), 1, 1, 1), device=x.device, dtype=x.dtype).uniform_(
+            0.6, 1.4
+        )
+        x = (x - gray) * saturation + gray
+
+        out[idx] = x
+
+    grayscale_mask = torch.rand(out.size(0), device=out.device) < 0.2
+    if torch.any(grayscale_mask):
+        x = out[grayscale_mask]
+        coeff = torch.tensor([0.2989, 0.5870, 0.1140], device=x.device, dtype=x.dtype).view(
+            1, 3, 1, 1
+        )
+        gray = (x * coeff).sum(dim=1, keepdim=True)
+        out[grayscale_mask] = gray.repeat(1, 3, 1, 1)
+
+    return out
+
+
+def _extract_images_labels(batch: object) -> Tuple[torch.Tensor, torch.Tensor]:
+    if not isinstance(batch, (tuple, list)):
+        raise ValueError("Expected batch to be a tuple/list")
+
+    if len(batch) == 2:
+        images, labels = batch
+        if not isinstance(images, torch.Tensor) or not isinstance(labels, torch.Tensor):
+            raise ValueError("Batch must contain torch.Tensor images and labels")
+        return images, labels
+
+    if len(batch) == 3:
+        view1, _, labels = batch
+        if not isinstance(view1, torch.Tensor) or not isinstance(labels, torch.Tensor):
+            raise ValueError("Batch must contain torch.Tensor views and labels")
+        return view1, labels
+
+    raise ValueError("Batch must be (images, labels) or (view1, view2, labels)")
+
+
+def _collect_images_labels_from_loader(loader: DataLoader) -> Tuple[torch.Tensor, torch.Tensor]:
+    images_list: List[torch.Tensor] = []
+    labels_list: List[torch.Tensor] = []
+    for batch in loader:
+        images, labels = _extract_images_labels(batch)
+        images_list.append(images.detach().cpu())
+        labels_list.append(labels.detach().cpu())
+
+    if not images_list:
+        raise ValueError("Cannot collect data from an empty loader")
+
+    return torch.cat(images_list, dim=0), torch.cat(labels_list, dim=0)
 
 
 def _train_linear_head_balanced(
     backbone: nn.Module,
     feat_dim: int,
-    buffer_images: torch.Tensor,
-    buffer_labels: torch.Tensor,
+    train_images: torch.Tensor,
+    train_labels: torch.Tensor,
     test_loaders: Dict[int, DataLoader],
     task_classes: List[List[int]],
     seen_task_ids: List[int],
@@ -112,8 +230,8 @@ def _train_linear_head_balanced(
     for p in model.backbone.parameters():
         p.requires_grad = False
 
-    eval_ds = _TensorDataset(buffer_images, buffer_labels)
-    sampler = _make_balanced_sampler(buffer_labels)
+    eval_ds = _TensorDataset(train_images, train_labels)
+    sampler = _make_balanced_sampler(train_labels)
     eval_loader = DataLoader(
         eval_ds,
         batch_size=batch_size,
@@ -223,7 +341,7 @@ def train_co2l(
         "taskwise_task_il_matrix": [],
     }
 
-    _append_baseline_row(history, baseline_payload)
+    append_baseline_row(history, baseline_payload, extra_keys={"ird_loss": 0.0})
 
     seen_task_ids: List[int] = [] if initial_seen_task_ids is None else list(initial_seen_task_ids)
     past_model: Optional[SupConNetwork] = (
@@ -257,23 +375,17 @@ def train_co2l(
             running_ird = 0.0
 
             for batch in train_loaders[task_id]:
-                if len(batch) == 3:
-                    view1_curr, view2_curr, labels_curr = batch
-                    view1_curr = view1_curr.to(device, non_blocking=True)
-                    view2_curr = view2_curr.to(device, non_blocking=True)
-                    labels_curr = labels_curr.to(device, non_blocking=True)
-                    bsz_curr = labels_curr.size(0)
-                elif len(batch) == 2:
-                    images_curr, labels_curr = batch
-                    images_curr = images_curr.to(device, non_blocking=True)
-                    labels_curr = labels_curr.to(device, non_blocking=True)
-                    bsz_curr = labels_curr.size(0)
-                    noise1 = 0.001 * torch.randn_like(images_curr)
-                    noise2 = 0.001 * torch.randn_like(images_curr)
-                    view1_curr = images_curr + noise1
-                    view2_curr = images_curr + noise2
-                else:
-                    raise ValueError("train loader batch must be (img,label) or (view1,view2,label)")
+                if not isinstance(batch, (tuple, list)) or len(batch) != 3:
+                    raise ValueError(
+                        "Co2L expects contrastive batches with (view1, view2, labels). "
+                        "Build train_loaders with ContrastiveTaskDataset/TwoCropTransform."
+                    )
+
+                view1_curr, view2_curr, labels_curr = batch
+                view1_curr = view1_curr.to(device, non_blocking=True)
+                view2_curr = view2_curr.to(device, non_blocking=True)
+                labels_curr = labels_curr.to(device, non_blocking=True)
+                bsz_curr = labels_curr.size(0)
 
                 if len(buffer) > 0:
                     replay_batch = bsz_curr
@@ -283,6 +395,7 @@ def train_co2l(
                     images_buf, labels_buf = buffer.sample(replay_batch)
                     images_buf = images_buf.to(device, non_blocking=True)
                     labels_buf = labels_buf.to(device, non_blocking=True)
+                    replay_k = labels_buf.size(0)
 
                     view1_buf = _augment_buffer_batch(images_buf)
                     view2_buf = _augment_buffer_batch(images_buf)
@@ -291,7 +404,7 @@ def train_co2l(
                     view2_all = torch.cat([view2_curr, view2_buf], dim=0)
                     labels_all = torch.cat([labels_curr, labels_buf], dim=0)
                     current_mask = torch.zeros(
-                        bsz_curr + replay_batch,
+                        bsz_curr + replay_k,
                         dtype=torch.bool,
                         device=device,
                     )
@@ -342,18 +455,30 @@ def train_co2l(
             p.requires_grad = False
 
         buffer_source = train_loaders_eval if train_loaders_eval is not None else train_loaders
-        for images, labels in buffer_source[task_id]:
+        if train_loaders_eval is None:
+            warnings.warn(
+                "train_loaders_eval not provided to train_co2l; replay buffer will "
+                "store augmented images.  Pass eval-transformed loaders for optimal "
+                "replay quality.",
+                stacklevel=2,
+            )
+        for batch in buffer_source[task_id]:
+            images, labels = _extract_images_labels(batch)
             buffer.add(images, labels)
 
         seen_task_ids.append(task_id)
 
         buffer_images = torch.stack(buffer.images, dim=0)
         buffer_labels = torch.tensor(buffer.labels, dtype=torch.long)
+        task_images, task_labels = _collect_images_labels_from_loader(buffer_source[task_id])
+        eval_train_images = torch.cat([task_images, buffer_images], dim=0)
+        eval_train_labels = torch.cat([task_labels, buffer_labels], dim=0)
+
         eval_model = _train_linear_head_balanced(
             backbone=model.backbone,
             feat_dim=feat_dim,
-            buffer_images=buffer_images,
-            buffer_labels=buffer_labels,
+            train_images=eval_train_images,
+            train_labels=eval_train_labels,
             test_loaders=test_loaders,
             task_classes=task_classes,
             seen_task_ids=seen_task_ids,

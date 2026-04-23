@@ -18,17 +18,7 @@ from ..train import (
 )
 
 
-def _append_baseline_row(history: Dict[str, object], baseline: Optional[Dict[str, object]]) -> None:
-    if baseline is None:
-        return
-    history["task_id"].append(float(baseline["task_id"]))
-    history["train_loss"].append(float(baseline.get("train_loss", float("nan"))))
-    history["incoming_loss"].append(0.0)
-    history["replay_loss"].append(0.0)
-    history["class_il"].append(float(baseline["class_il"]))
-    history["task_il"].append(float(baseline["task_il"]))
-    history["taskwise_class_il_matrix"].append(list(baseline["taskwise_class_il_row"]))
-    history["taskwise_task_il_matrix"].append(list(baseline["taskwise_task_il_row"]))
+from ._utils import append_baseline_row
 
 
 def _cross_entropy_on_class_subset(
@@ -109,7 +99,10 @@ def train_er_ace(
         "taskwise_task_il_matrix": [],
     }
 
-    _append_baseline_row(history, baseline_payload)
+    append_baseline_row(
+        history, baseline_payload,
+        extra_keys={"incoming_loss": 0.0, "replay_loss": 0.0},
+    )
 
     seen_task_ids: List[int] = [] if initial_seen_task_ids is None else list(initial_seen_task_ids)
 

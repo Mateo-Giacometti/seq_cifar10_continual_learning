@@ -1,6 +1,6 @@
 from copy import deepcopy
 import random
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 import torch
@@ -313,6 +313,9 @@ def evaluate_taskwise_class_il(
 ) -> List[float]:
     """Per-task Class-IL accuracy for all seen tasks.
 
+    This metric evaluates each task test loader independently, but keeps the
+    Class-IL decision rule: argmax over all global logits (no task mask).
+
     Returns a dense list of length `n_tasks` with NaN for tasks not yet seen.
     """
     if n_tasks is None:
@@ -376,9 +379,36 @@ def evaluate_taskwise_task_il(
             correct += (task_preds_global == labels).sum().item()
             total += labels.size(0)
 
-        out[task_id] = 0.0 if total == 0 else 100.0 * correct / total
-
     return out
+
+
+@torch.no_grad()
+def get_confusion_matrix(
+    model: nn.Module,
+    loader: torch.utils.data.DataLoader,
+    device: torch.device,
+    num_classes: int = 10,
+) -> np.ndarray:
+    """Compute a confusion matrix for the given model and data loader."""
+    import numpy as np
+    from sklearn.metrics import confusion_matrix
+    model.eval()
+    all_preds = []
+    all_labels = []
+
+    for images, labels in loader:
+        images = images.to(device, non_blocking=True)
+        output = model(images)
+        if isinstance(output, (tuple, list)):
+            logits = output[0]
+        else:
+            logits = output
+
+        preds = logits.argmax(dim=1)
+        all_preds.extend(preds.cpu().numpy())
+        all_labels.extend(labels.numpy())
+
+    return confusion_matrix(all_labels, all_preds, labels=list(range(num_classes)))
 
 
 def _ewc_penalty(
@@ -406,7 +436,13 @@ def _compute_fisher_diagonal(
     loader: torch.utils.data.DataLoader,
     device: torch.device,
     max_batches: Optional[int] = None,
+    fisher_loss_mode: Literal["ce", "nll_true", "nll_pred"] = "ce",
 ) -> Dict[str, torch.Tensor]:
+    if fisher_loss_mode not in {"ce", "nll_true", "nll_pred"}:
+        raise ValueError(
+            "fisher_loss_mode must be one of {'ce', 'nll_true', 'nll_pred'}"
+        )
+
     model.eval()
     fisher_diag = {
         name: torch.zeros_like(param, device=device)
@@ -424,7 +460,15 @@ def _compute_fisher_diagonal(
 
         model.zero_grad(set_to_none=True)
         logits = model(images)
-        loss = nn.functional.cross_entropy(logits, labels)
+        if fisher_loss_mode == "ce":
+            loss = nn.functional.cross_entropy(logits, labels)
+        else:
+            log_probs = nn.functional.log_softmax(logits, dim=1)
+            if fisher_loss_mode == "nll_true":
+                targets = labels
+            else:
+                targets = logits.argmax(dim=1)
+            loss = -log_probs.gather(1, targets.unsqueeze(1)).mean()
         loss.backward()
 
         for name, param in model.named_parameters():
@@ -497,159 +541,3 @@ def _train_task_classifier(
     return avg_loss
 
 
-def train_naive_finetuning(
-    backbone: nn.Module,
-    feat_dim: int,
-    train_loaders: Dict[int, torch.utils.data.DataLoader],
-    test_loaders: Dict[int, torch.utils.data.DataLoader],
-    task_classes: List[List[int]],
-    device: torch.device,
-    num_classes: int = 10,
-    epochs_per_task: int = 10,
-    lr: float = 0.03,
-    momentum: float = 0.9,
-    weight_decay: float = 1e-4,
-    task_ids: Optional[List[int]] = None,
-    verbose: bool = True,
-) -> Tuple[nn.Module, Dict[str, List[float]]]:
-    selected_task_ids = _resolve_task_ids(train_loaders, task_ids)
-
-    model = ContinualClassifier(
-        backbone=deepcopy(backbone),
-        feat_dim=feat_dim,
-        num_classes=num_classes,
-    ).to(device)
-    optimizer = torch.optim.SGD(
-        model.parameters(),
-        lr=lr,
-        momentum=momentum,
-        weight_decay=weight_decay,
-    )
-
-    history: Dict[str, List[float]] = {
-        "task_id": [],
-        "train_loss": [],
-        "class_il": [],
-        "task_il": [],
-    }
-
-    seen_task_ids: List[int] = []
-    for task_id in selected_task_ids:
-        avg_loss = _train_task_classifier(
-            model=model,
-            train_loader=train_loaders[task_id],
-            optimizer=optimizer,
-            device=device,
-            epochs=epochs_per_task,
-            task_id=task_id,
-            verbose=verbose,
-        )
-        seen_task_ids.append(task_id)
-
-        class_il_acc = evaluate_class_il(model, test_loaders, seen_task_ids, device)
-        task_il_acc = evaluate_task_il(
-            model,
-            test_loaders,
-            task_classes,
-            seen_task_ids,
-            device,
-        )
-
-        history["task_id"].append(float(task_id))
-        history["train_loss"].append(avg_loss)
-        history["class_il"].append(class_il_acc)
-        history["task_il"].append(task_il_acc)
-
-        if verbose:
-            print(
-                f"Task {task_id} done | Class-IL={class_il_acc:.2f}% | "
-                f"Task-IL={task_il_acc:.2f}%"
-            )
-
-    return model, history
-
-
-def train_ewc(
-    backbone: nn.Module,
-    feat_dim: int,
-    train_loaders: Dict[int, torch.utils.data.DataLoader],
-    test_loaders: Dict[int, torch.utils.data.DataLoader],
-    task_classes: List[List[int]],
-    device: torch.device,
-    num_classes: int = 10,
-    epochs_per_task: int = 10,
-    lr: float = 0.03,
-    momentum: float = 0.9,
-    weight_decay: float = 1e-4,
-    ewc_lambda: float = 10.0,
-    fisher_max_batches: Optional[int] = None,
-    task_ids: Optional[List[int]] = None,
-    verbose: bool = True,
-) -> Tuple[nn.Module, Dict[str, List[float]]]:
-    selected_task_ids = _resolve_task_ids(train_loaders, task_ids)
-
-    model = ContinualClassifier(
-        backbone=deepcopy(backbone),
-        feat_dim=feat_dim,
-        num_classes=num_classes,
-    ).to(device)
-    optimizer = torch.optim.SGD(
-        model.parameters(),
-        lr=lr,
-        momentum=momentum,
-        weight_decay=weight_decay,
-    )
-
-    ewc_terms: List[Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]] = []
-    history: Dict[str, List[float]] = {
-        "task_id": [],
-        "train_loss": [],
-        "class_il": [],
-        "task_il": [],
-    }
-
-    seen_task_ids: List[int] = []
-    for task_id in selected_task_ids:
-        avg_loss = _train_task_classifier(
-            model=model,
-            train_loader=train_loaders[task_id],
-            optimizer=optimizer,
-            device=device,
-            epochs=epochs_per_task,
-            task_id=task_id,
-            verbose=verbose,
-            ewc_terms=ewc_terms,
-            ewc_lambda=ewc_lambda,
-        )
-
-        fisher_diag = _compute_fisher_diagonal(
-            model,
-            train_loaders[task_id],
-            device=device,
-            max_batches=fisher_max_batches,
-        )
-        params_star = _snapshot_parameters(model)
-        ewc_terms.append((fisher_diag, params_star))
-
-        seen_task_ids.append(task_id)
-        class_il_acc = evaluate_class_il(model, test_loaders, seen_task_ids, device)
-        task_il_acc = evaluate_task_il(
-            model,
-            test_loaders,
-            task_classes,
-            seen_task_ids,
-            device,
-        )
-
-        history["task_id"].append(float(task_id))
-        history["train_loss"].append(avg_loss)
-        history["class_il"].append(class_il_acc)
-        history["task_il"].append(task_il_acc)
-
-        if verbose:
-            print(
-                f"Task {task_id} done (EWC) | Class-IL={class_il_acc:.2f}% | "
-                f"Task-IL={task_il_acc:.2f}%"
-            )
-
-    return model, history

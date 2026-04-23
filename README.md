@@ -79,12 +79,29 @@ Las figuras se guardan en `outputs/imgs/` (ademas de mostrarse en notebook):
 - `methods_over_tasks.png`
 - `forgetting_class_il.png`
 - `forgetting_task_il.png`
+- `bwt_class_il.png`
+- `bwt_task_il.png`
 - `forgetting_by_task_class_il_<metodo>.png`
 - `forgetting_by_task_task_il_<metodo>.png`
 - `methods_comparison.png`
 
 Adicionalmente se exporta una tabla comparativa en:
 - `outputs/metrics/methods_comparison.csv`
+
+## Metricas de transferencia y olvido
+
+En la seccion 4.4 se calculan metricas sobre la matriz task-wise `A[t, k]`
+(accuracy en tarea `k` luego de aprender hasta el paso `t`):
+
+- `Forgetting (max-history)` (recomendado): `F[t, k] = max_{l<t} A[l, k] - A[t, k]` para `k < t`.
+- `BWT`: `BWT[t, k] = A[t, k] - A[t0(k), k]`, donde `t0(k)` es el primer paso en que aparece la tarea `k`.
+
+El promedio por paso se calcula solo sobre tareas pasadas (`k < t`), evitando incluir
+la tarea actual en el promedio.
+
+Nota sobre matrices task-wise:
+- `taskwise_class_il_matrix`: evalua por tarea, pero con decision global Class-IL (argmax sobre todos los logits).
+- `taskwise_task_il_matrix`: evalua por tarea con decision restringida a las clases de la tarea (Task-IL).
 
 Si el checkpoint existe, el notebook carga; si no existe, entrena y guarda automaticamente.
 Si existe pero no cumple el protocolo `from_task0_pretrained`, se re-entrena y se sobre-escribe.

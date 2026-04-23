@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Literal, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -17,17 +17,7 @@ from ..train import (
     evaluate_taskwise_class_il,
     evaluate_taskwise_task_il,
 )
-
-
-def _append_baseline_row(history: Dict[str, object], baseline: Optional[Dict[str, object]]) -> None:
-    if baseline is None:
-        return
-    history["task_id"].append(float(baseline["task_id"]))
-    history["train_loss"].append(float(baseline.get("train_loss", float("nan"))))
-    history["class_il"].append(float(baseline["class_il"]))
-    history["task_il"].append(float(baseline["task_il"]))
-    history["taskwise_class_il_matrix"].append(list(baseline["taskwise_class_il_row"]))
-    history["taskwise_task_il_matrix"].append(list(baseline["taskwise_task_il_row"]))
+from ._utils import append_baseline_row
 
 
 def train_ewc(
@@ -44,6 +34,7 @@ def train_ewc(
     weight_decay: float = 1e-4,
     ewc_lambda: float = 10.0,
     fisher_max_batches: Optional[int] = None,
+    fisher_loss_mode: Literal["ce", "nll_true", "nll_pred"] = "ce",
     task_ids: Optional[List[int]] = None,
     initial_model: Optional[ContinualClassifier] = None,
     initial_seen_task_ids: Optional[List[int]] = None,
@@ -51,6 +42,11 @@ def train_ewc(
     baseline_payload: Optional[Dict[str, object]] = None,
     verbose: bool = True,
 ) -> Tuple[nn.Module, Dict[str, object]]:
+    """Train with Elastic Weight Consolidation (Kirkpatrick et al. 2017).
+
+    Note: ``ewc_lambda`` absorbs the 1/2 factor from the paper's formulation.
+    Our ``ewc_lambda=5.0`` is equivalent to the paper's ``λ=10.0``.
+    """
     selected_task_ids = _resolve_task_ids(train_loaders, task_ids)
 
     model = (
@@ -61,12 +57,6 @@ def train_ewc(
             feat_dim=feat_dim,
             num_classes=num_classes,
         ).to(device)
-    )
-    optimizer = torch.optim.SGD(
-        model.parameters(),
-        lr=lr,
-        momentum=momentum,
-        weight_decay=weight_decay,
     )
 
     ewc_terms: List[Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]] = (
@@ -82,10 +72,19 @@ def train_ewc(
         "taskwise_task_il_matrix": [],
     }
 
-    _append_baseline_row(history, baseline_payload)
+    append_baseline_row(history, baseline_payload)
 
     seen_task_ids: List[int] = [] if initial_seen_task_ids is None else list(initial_seen_task_ids)
     for task_id in selected_task_ids:
+        # Reset optimizer per task to avoid momentum carry-over from previous
+        # task distributions.
+        optimizer = torch.optim.SGD(
+            model.parameters(),
+            lr=lr,
+            momentum=momentum,
+            weight_decay=weight_decay,
+        )
+
         avg_loss = _train_task_classifier(
             model=model,
             train_loader=train_loaders[task_id],
@@ -103,6 +102,7 @@ def train_ewc(
             train_loaders[task_id],
             device=device,
             max_batches=fisher_max_batches,
+            fisher_loss_mode=fisher_loss_mode,
         )
         params_star = _snapshot_parameters(model)
         ewc_terms.append((fisher_diag, params_star))

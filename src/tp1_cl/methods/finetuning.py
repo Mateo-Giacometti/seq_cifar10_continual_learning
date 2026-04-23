@@ -15,17 +15,7 @@ from ..train import (
     evaluate_taskwise_class_il,
     evaluate_taskwise_task_il,
 )
-
-
-def _append_baseline_row(history: Dict[str, object], baseline: Optional[Dict[str, object]]) -> None:
-    if baseline is None:
-        return
-    history["task_id"].append(float(baseline["task_id"]))
-    history["train_loss"].append(float(baseline.get("train_loss", float("nan"))))
-    history["class_il"].append(float(baseline["class_il"]))
-    history["task_il"].append(float(baseline["task_il"]))
-    history["taskwise_class_il_matrix"].append(list(baseline["taskwise_class_il_row"]))
-    history["taskwise_task_il_matrix"].append(list(baseline["taskwise_task_il_row"]))
+from ._utils import append_baseline_row
 
 
 def train_naive_finetuning(
@@ -57,12 +47,6 @@ def train_naive_finetuning(
             num_classes=num_classes,
         ).to(device)
     )
-    optimizer = torch.optim.SGD(
-        model.parameters(),
-        lr=lr,
-        momentum=momentum,
-        weight_decay=weight_decay,
-    )
 
     n_tasks = len(task_classes)
     history: Dict[str, object] = {
@@ -74,10 +58,19 @@ def train_naive_finetuning(
         "taskwise_task_il_matrix": [],
     }
 
-    _append_baseline_row(history, baseline_payload)
+    append_baseline_row(history, baseline_payload)
 
     seen_task_ids: List[int] = [] if initial_seen_task_ids is None else list(initial_seen_task_ids)
     for task_id in selected_task_ids:
+        # Reset optimizer per task to avoid momentum carry-over from previous
+        # task distributions.
+        optimizer = torch.optim.SGD(
+            model.parameters(),
+            lr=lr,
+            momentum=momentum,
+            weight_decay=weight_decay,
+        )
+
         avg_loss = _train_task_classifier(
             model=model,
             train_loader=train_loaders[task_id],
