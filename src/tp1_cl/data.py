@@ -1,11 +1,9 @@
 from dataclasses import dataclass
 import random
 from typing import Callable, Dict, List, Optional, Tuple
-
 import torch
 from torch.utils.data import DataLoader, Dataset
 from torchvision import datasets, transforms
-
 
 CIFAR10_CLASSES = [
     "airplane",
@@ -19,7 +17,6 @@ CIFAR10_CLASSES = [
     "ship",
     "truck",
 ]
-
 
 @dataclass
 class TaskConfig:
@@ -127,9 +124,15 @@ class CIFAR10TaskDataset(Dataset):
         self.target_transform = target_transform
 
     def __len__(self) -> int:
+        """
+        Returns the number of samples in the task.
+        """
         return len(self.indices)
 
     def __getitem__(self, idx: int):
+        """
+        Returns the image and label for the given index.
+        """
         base_idx = self.indices[idx]
         image, target = self.base_dataset[base_idx]
         if self.transform is not None:
@@ -250,15 +253,32 @@ class SeqCIFAR10Builder:
         transform: Optional[Callable] = None,
         target_transform: Optional[Callable] = None,
     ) -> Dataset:
+        """
+        Get a task dataset.
+
+        Parameters
+        ----------
+        task_id : int
+            The ID of the task.
+        train : bool
+            Whether to get the training dataset.
+        transform : Optional[Callable]
+            The transformation to apply to the images.
+        target_transform : Optional[Callable]
+            The transformation to apply to the labels.
+
+        Returns
+        -------
+        Dataset
+            The task dataset.
+        """
         base = self.train_base if train else self.test_base
         indices = (
             self.train_indices_by_task[task_id]
             if train
             else self.test_indices_by_task[task_id]
         )
-        return CIFAR10TaskDataset(
-            base, indices, transform=transform, target_transform=target_transform
-        )
+        return CIFAR10TaskDataset(base, indices, transform=transform, target_transform=target_transform)
 
     def build_task_loaders(
         self,
@@ -271,6 +291,33 @@ class SeqCIFAR10Builder:
         test_target_transform: Optional[Callable] = None,
         loader_kwargs: Optional[Dict[str, object]] = None,
     ) -> Tuple[Dict[int, DataLoader], Dict[int, DataLoader]]:
+        """
+        Build task loaders.
+
+        Parameters
+        ----------
+        batch_size : int
+            The batch size.
+        transform : Optional[Callable]
+            The transformation to apply to the images.
+        train_shuffle : bool
+            Whether to shuffle the training data.
+        num_workers : int
+            The number of worker processes.
+        test_transform : Optional[Callable]
+            The transformation to apply to the test images.
+        train_target_transform : Optional[Callable]
+            The transformation to apply to the training labels.
+        test_target_transform : Optional[Callable]
+            The transformation to apply to the test labels.
+        loader_kwargs : Optional[Dict[str, object]]
+            Additional arguments for the loader.
+
+        Returns
+        -------
+        Tuple[Dict[int, DataLoader], Dict[int, DataLoader]]
+            The training and test loaders.
+        """
         train_loaders: Dict[int, DataLoader] = {}
         test_loaders: Dict[int, DataLoader] = {}
 
@@ -316,6 +363,14 @@ class SeqCIFAR10Builder:
         return train_loaders, test_loaders
 
     def summary_rows(self) -> List[Dict[str, object]]:
+        """
+        Get a summary of the task datasets.
+
+        Returns
+        -------
+        List[Dict[str, object]]
+            A list of dictionaries containing the summary of the task datasets.
+        """
         rows: List[Dict[str, object]] = []
         for task_id, classes in enumerate(self.task_classes):
             rows.append(
@@ -339,6 +394,24 @@ class SeqCIFAR10Builder:
 
 class ReservoirReplayBuffer:
     def __init__(self, capacity: int, seed: int = 42) -> None:
+        """
+        Initialize the replay buffer.
+
+        Attributes
+        ----------
+        capacity : int
+            The capacity of the buffer.
+        seed : int
+            The seed for the random number generator.
+        images : List[torch.Tensor]
+            The images in the buffer.
+        labels : List[int]
+            The labels in the buffer.
+        seen : int
+            The number of samples seen so far.
+        rng : random.Random
+            The random number generator.
+        """
         if capacity <= 0:
             raise ValueError("capacity must be > 0")
         self.capacity = capacity
@@ -348,9 +421,22 @@ class ReservoirReplayBuffer:
         self.rng = random.Random(seed)
 
     def __len__(self) -> int:
+        """
+        Returns the number of samples in the buffer.
+        """
         return len(self.images)
 
     def add(self, images: torch.Tensor, labels: torch.Tensor) -> None:
+        """
+        Add samples to the buffer.
+
+        Parameters
+        ----------
+        images : torch.Tensor
+            The images to add to the buffer.
+        labels : torch.Tensor
+            The labels to add to the buffer.
+        """
         images_cpu = images.detach().cpu()
         labels_cpu = labels.detach().cpu()
 
@@ -366,6 +452,19 @@ class ReservoirReplayBuffer:
                     self.labels[j] = int(label.item())
 
     def sample(self, batch_size: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Sample a batch of images and labels from the buffer.
+
+        Parameters
+        ----------
+        batch_size : int
+            The number of samples to sample.
+
+        Returns
+        -------
+        Tuple[torch.Tensor, torch.Tensor]
+            A tuple containing the sampled images and labels.
+        """
         if len(self.images) == 0:
             raise ValueError("Cannot sample from an empty replay buffer")
         k = min(batch_size, len(self.images))
@@ -377,9 +476,30 @@ class ReservoirReplayBuffer:
 
 class TwoCropTransform:
     def __init__(self, base_transform: Callable) -> None:
+        """
+        Initialize the two-crop transform.
+
+        Parameters
+        ----------
+        base_transform : Callable
+            The base transformation to apply to the images.
+        """
         self.base_transform = base_transform
 
     def __call__(self, x):
+        """
+        Apply the two-crop transform to the given image.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            The image to apply the transform to.
+
+        Returns
+        -------
+        Tuple[torch.Tensor, torch.Tensor]
+            A tuple containing the two transformed images.
+        """
         return self.base_transform(x), self.base_transform(x)
 
 
@@ -387,13 +507,39 @@ class ContrastiveTaskDataset(Dataset):
     def __init__(
         self, task_dataset: Dataset, two_crop_transform: TwoCropTransform
     ) -> None:
+        """
+        Initialize the contrastive task dataset.
+
+        Parameters
+        ----------
+        task_dataset : Dataset
+            The task dataset to apply the two-crop transform to.
+        two_crop_transform : TwoCropTransform
+            The two-crop transform to apply to the images.
+        """
         self.task_dataset = task_dataset
         self.two_crop_transform = two_crop_transform
 
     def __len__(self) -> int:
+        """
+        Returns the number of samples in the dataset.
+        """
         return len(self.task_dataset)
 
     def __getitem__(self, idx: int):
+        """
+        Get the item at the given index.
+
+        Parameters
+        ----------
+        idx : int
+            The index of the item to get.
+
+        Returns
+        -------
+        Tuple[torch.Tensor, torch.Tensor, int]
+            A tuple containing the two transformed images and the label.
+        """
         image, label = self.task_dataset[idx]
         view1, view2 = self.two_crop_transform(image)
         return view1, view2, label
@@ -401,16 +547,57 @@ class ContrastiveTaskDataset(Dataset):
 
 class LabelMapper:
     def __init__(self, task_classes: List[int]) -> None:
+        """
+        Initialize the label mapper.
+
+        Parameters
+        ----------
+        task_classes : List[int]
+            The task classes to map the labels to.
+        """
         self.mapping = {c: i for i, c in enumerate(task_classes)}
 
     def __call__(self, y: int) -> int:
+        """
+        Apply the label mapping to the given label.
+
+        Parameters
+        ----------
+        y : int
+            The label to apply the mapping to.
+
+        Returns
+        -------
+        int
+            The mapped label.
+        """
         return self.mapping[int(y)]
 
 
 @dataclass
 class TransformConfig:
-    """Configuration for evaluation and SupCon augmentation pipelines."""
+    """
+    Configuration for evaluation and SupCon augmentation pipelines.
 
+    Parameters
+    ----------
+    mean : Tuple[float, float, float]
+        The mean of the images.
+    std : Tuple[float, float, float]
+        The standard deviation of the images.
+    crop_size : int
+        The size of the crops.
+    crop_scale : Tuple[float, float]
+        The scale of the crops.
+    hflip_prob : float
+        The probability of horizontal flip.
+    color_jitter_values : Tuple[float, float, float, float]
+        The values of the color jitter.
+    color_jitter_prob : float
+        The probability of color jitter.
+    grayscale_prob : float
+        The probability of grayscale.
+    """
     mean: Tuple[float, float, float] = (0.4914, 0.4822, 0.4465)
     std: Tuple[float, float, float] = (0.2470, 0.2435, 0.2616)
     crop_size: int = 32
@@ -424,6 +611,19 @@ class TransformConfig:
 def build_transforms(
     config: Optional[TransformConfig] = None,
 ) -> Tuple[transforms.Compose, transforms.Compose]:
+    """
+    Build the transformation pipelines for evaluation and SupCon training.
+
+    Parameters
+    ----------
+    config : Optional[TransformConfig]
+        The configuration for the transformations.
+
+    Returns
+    -------
+    Tuple[transforms.Compose, transforms.Compose]
+        A tuple containing the evaluation and SupCon training transformation pipelines.
+    """
     cfg = TransformConfig() if config is None else config
 
     eval_transform = transforms.Compose(

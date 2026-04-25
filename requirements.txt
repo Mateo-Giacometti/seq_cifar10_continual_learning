@@ -5,3 +5,4 @@ matplotlib
 scikit-learn
 umap-learn
 pyyaml
+pandas

@@ -5,9 +5,16 @@ from typing import Any
 
 import yaml
 
-
 class ConfigNode:
     def __init__(self, data: dict[str, Any]) -> None:
+        """
+        Initialize the ConfigNode.
+
+        Parameters
+        ----------
+        data : dict[str, Any]
+            The data to initialize the ConfigNode with.
+        """
         for key, value in data.items():
             if isinstance(value, dict):
                 setattr(self, key, ConfigNode(value))
@@ -15,9 +22,30 @@ class ConfigNode:
                 setattr(self, key, value)
 
     def __getitem__(self, key: str) -> Any:
+        """
+        Get an item from the ConfigNode.
+
+        Parameters
+        ----------
+        key : str
+            The key of the item to get.
+
+        Returns
+        -------
+        Any
+            The item.
+        """
         return getattr(self, key)
 
     def to_dict(self) -> dict[str, Any]:
+        """
+        Convert the ConfigNode to a dictionary.
+
+        Returns
+        -------
+        dict[str, Any]
+            The dictionary.
+        """
         out: dict[str, Any] = {}
         for key, value in self.__dict__.items():
             out[key] = value.to_dict() if isinstance(value, ConfigNode) else value
@@ -25,6 +53,19 @@ class ConfigNode:
 
 
 def load_config(path: str | Path) -> ConfigNode:
+    """
+    Load a configuration from a YAML file.
+
+    Parameters
+    ----------
+    path : str | Path
+        The path to the YAML file.
+
+    Returns
+    -------
+    ConfigNode
+        The configuration.
+    """
     config_path = Path(path)
     if not config_path.exists():
         raise FileNotFoundError(f"Config file not found: {config_path}")

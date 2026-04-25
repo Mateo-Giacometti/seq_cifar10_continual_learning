@@ -16,7 +16,23 @@ def build_task0_replay_buffer(
     capacity: int,
     seed: int,
 ) -> ReservoirReplayBuffer:
-    """Build a replay buffer populated with Task 0 samples."""
+    """
+    Build a replay buffer populated with Task 0 samples.
+
+    Parameters
+    ----------
+    train_loader : torch.utils.data.DataLoader
+        The data loader containing the data to train on.
+    capacity : int
+        The capacity of the replay buffer.
+    seed : int
+        The seed for the replay buffer.
+
+    Returns
+    -------
+    ReservoirReplayBuffer
+        The replay buffer.
+    """
     buffer = ReservoirReplayBuffer(capacity=capacity, seed=seed)
     for batch in train_loader:
         if len(batch) == 2:
@@ -37,10 +53,31 @@ def build_initial_classifier_from_linear_head(
     task0_classes: List[int],
     device: torch.device,
 ) -> ContinualClassifier:
-    """Create a global classifier initialized from Task 0 linear head.
+    """
+    Create a global classifier initialized from Task 0 linear head.
 
     The two-class linear head from section 4.2 is mapped to global class
     indices in `task0_classes`. Remaining classes are initialized to zero.
+
+    Parameters
+    ----------
+    backbone : nn.Module
+        The backbone network.
+    feat_dim : int
+        The feature dimension.
+    num_classes : int
+        The number of classes.
+    linear_head : nn.Linear
+        The linear head.
+    task0_classes : List[int]
+        The list of class indices for Task 0.
+    device : torch.device
+        The device to use.
+
+    Returns
+    -------
+    ContinualClassifier
+        The continual classifier.
     """
     model = ContinualClassifier(
         backbone=deepcopy(backbone),
@@ -63,7 +100,23 @@ def task0_baseline_payload(
     n_tasks: int,
     task0_id: int = 0,
 ) -> Dict[str, object]:
-    """Create baseline metrics entry for histories before CL tasks start."""
+    """
+    Create baseline metrics entry for histories before CL tasks start.
+
+    Parameters
+    ----------
+    task0_acc : float
+        The accuracy of Task 0.
+    n_tasks : int
+        The number of tasks.
+    task0_id : int, optional
+        The ID of Task 0, by default 0.
+
+    Returns
+    -------
+    Dict[str, object]
+        The baseline metrics entry.
+    """
     row_class = [float("nan")] * n_tasks
     row_task = [float("nan")] * n_tasks
     row_class[task0_id] = task0_acc
@@ -85,6 +138,27 @@ def build_task0_ewc_terms(
     fisher_max_batches: Optional[int] = None,
     fisher_loss_mode: Literal["ce", "nll_true", "nll_pred"] = "ce",
 ) -> List[Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]]:
+    """
+    Compute the EWC terms for Task 0.
+
+    Parameters
+    ----------
+    model : nn.Module
+        The model to evaluate.
+    train_loader_task0 : torch.utils.data.DataLoader
+        The data loader containing the data to evaluate on.
+    device : torch.device
+        The device to use for evaluation.
+    fisher_max_batches : Optional[int], optional
+        The maximum number of batches to use for evaluation, by default None.
+    fisher_loss_mode : Literal["ce", "nll_true", "nll_pred"], optional
+        The Fisher loss mode, by default "ce".
+
+    Returns
+    -------
+    List[Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]]
+        The EWC terms.
+    """  
     fisher_diag = _compute_fisher_diagonal(
         model=model,
         loader=train_loader_task0,

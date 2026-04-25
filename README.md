@@ -1,113 +1,89 @@
-# TP1 - Vision Artificial Avanzada
+# Continual Learning on Seq-CIFAR10 with Supervised Contrastive Pre-training
 
-Trabajo practico de `I309 - Vision Artificial Avanzada` (UdeSA) sobre aprendizaje continuo en Seq-CIFAR-10.
+This repository contains the final implementation of the **Continual Learning (CL)** project for the `I309 - Advanced Computer Vision` course (UdeSA). The project explores the intersection of **Supervised Contrastive Learning (SupCon)** and several CL strategies to mitigate catastrophic forgetting on the Sequential CIFAR-10 dataset.
 
-Actualmente cubre y refactoriza las etapas:
-- `4.1` Preparacion de dataset secuencial + replay buffer.
-- `4.2` Pre-entrenamiento SupCon en Task 0 + linear evaluation.
-- `4.3.1` Fine-tuning naive.
-- `4.3.2` EWC.
-- `4.3.3` LwF.
-- `4.3.4` Co2L.
-- `[Opcional]` ER-ACE.
+## Project Overview
 
-## Estructura
+The pipeline implements a comprehensive CL experimental setup, starting from a pre-trained backbone and evaluating its performance across multiple tasks using both **Class-IL** and **Task-IL** metrics.
 
-```
+### Key Components:
+- **Dataset (4.1)**: Sequential CIFAR-10 builder with support for Replay Buffers (Reservoir Sampling).
+- **Pre-training (4.2)**: Supervised Contrastive pre-training on Task 0 with subsequent linear evaluation.
+- **CL Methods (4.3)**:
+  - **Naive Fine-tuning**: Standard training without forgetting prevention (Baseline).
+  - **EWC (Elastic Weight Consolidation)**: Regularization based on Fisher Information.
+  - **LwF (Learning without Forgetting)**: Knowledge distillation from previous model versions.
+  - **Co2L (Contrastive Continual Learning)**: Contrastive-based CL approach.
+  - **ER-ACE (Experience Replay with Asymmetric Cross-Entropy)**: Buffer-based strategy.
+- **Reporting & Metrics (4.4)**:
+  - Global Accuracy (Class-IL / Task-IL) evolution.
+  - **Forgetting (Max-History)** and **BWT (Backward Transfer)** evolution per step.
+  - Confusion Matrices and Task-wise performance heatmaps.
+  - **Latent Space Analysis**: Evolution of embeddings (t-SNE/UMAP) across tasks.
+
+## Repository Structure
+
+```text
 .
 ├── configs/
-│   └── cifar10.yaml
+│   └── cifar10.yaml        # Centralized hyperparameters
 ├── src/
-│   └── tp1_cl/
-│       ├── __init__.py
-│       ├── config.py
-│       ├── checkpoints.py
-│       ├── data.py
-│       ├── models.py
-│       ├── train.py
-│       ├── viz.py
-│       └── methods/
-│           ├── __init__.py
-│           ├── finetuning.py
-│           ├── ewc.py
-│           ├── lwf.py
+│   └── tp1_cl/             # Core package
+│       ├── bootstrap.py    # Logic for Task 0 transition
+│       ├── checkpoints.py  # Loading/Saving models and histories
+│       ├── config.py       # YAML configuration parser
+│       ├── data.py         # Seq-CIFAR10 and Replay Buffers
+│       ├── models.py       # ResNet backbones and SupCon heads
+│       ├── train.py        # Generic training and evaluation loops
+│       ├── viz.py          # Academic-grade visualization engine
+│       └── methods/        # Specific CL implementations
 │           ├── co2l.py
-│           └── er_ace.py
-├── tp1.ipynb
-├── project/
-├── papers/
-└── requirements.txt
+│           ├── er_ace.py
+│           ├── ewc.py
+│           ├── finetuning.py
+│           └── lwf.py
+├── outputs/                # Generated artifacts (checkpoints, images, metrics)
+├── tp1.ipynb               # Main execution notebook
+└── requirements.txt        # Project dependencies
 ```
 
-## Instalacion
+## Setup & Installation
+
+It is recommended to use a virtual environment with Python 3.10+.
 
 ```bash
+# Create and activate environment
 python -m venv .venv
 source .venv/bin/activate
+
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-## Ejecucion
+## How to Run
 
-1. Abrir `tp1.ipynb` desde la raiz del repositorio.
-2. Ejecutar las celdas en orden.
-3. El notebook usa `configs/cifar10.yaml` como fuente unica de hiperparametros.
-4. Protocolo activo: `from_task0_pretrained`.
-   - La Task 0 se entrena en `4.2`.
-   - Los metodos de CL (`4.3.x`) arrancan desde Task 1 (`task_ids=[1,2,3,4]`) reutilizando estado inicial de Task 0.
+1.  **Configuration**: Modify `configs/cifar10.yaml` to adjust learning rates, batch sizes, or seeds.
+2.  **Jupyter Notebook**: Open `tp1.ipynb`.
+3.  **Execution Flow**:
+    - Run the **Preparation** cells to initialize datasets and builders.
+    - Execute **Section 4.2** to perform SupCon pre-training on Task 0.
+    - Run the **CL Protocol** cells (Section 4.3) for each method. The notebook automatically handles checkpointing; if a `.pt` file exists in `outputs/checkpoints/`, it will load the results instead of retraining.
+    - The final section generates a **Comparative Report** including summary tables and unified plots.
 
-## Checkpointing
+## Visualization Engine
 
-Se guardan artefactos en `outputs/checkpoints/` para evitar reentrenar cuando solo cambian plots o analisis:
-- `task0_supcon.pt`
-- `task0_linear_eval.pt`
-- `naive_seq_cifar10.pt`
-- `ewc_seq_cifar10.pt`
-- `lwf_seq_cifar10.pt`
-- `co2l_seq_cifar10.pt`
-- `er_ace_seq_cifar10.pt`
+The project includes a robust visualization module (`tp1_cl.viz`) designed for academic reporting:
+- **`plot_cl_metrics`**: Evolution of global accuracies with per-point annotations.
+- **`plot_forgetting_metrics` / `plot_bwt_metrics`**: Evolution of transfer metrics per step.
+- **`plot_final_embeddings_comparison`**: Unified view of the latent space for all trained methods using a shared scale.
+- **`plot_single_method_embeddings`**: High-detail visualization of a specific method's feature distribution.
+- **`plot_taskwise_heatmap`**: Detailed breakdown of accuracy for every learned task at every step.
 
-Las figuras se guardan en `outputs/imgs/` (ademas de mostrarse en notebook):
-- `supcon_loss.png`
-- `embedding_snapshots.png`
-- `linear_eval_accuracy.png`
-- `naive_cl_metrics.png`
-- `ewc_cl_metrics.png`
-- `lwf_cl_metrics.png`
-- `co2l_cl_metrics.png`
-- `er_ace_cl_metrics.png`
-- `methods_over_tasks.png`
-- `forgetting_class_il.png`
-- `forgetting_task_il.png`
-- `bwt_class_il.png`
-- `bwt_task_il.png`
-- `forgetting_by_task_class_il_<metodo>.png`
-- `forgetting_by_task_task_il_<metodo>.png`
-- `methods_comparison.png`
+## Reproducibility
 
-Adicionalmente se exporta una tabla comparativa en:
-- `outputs/metrics/methods_comparison.csv`
+- **Seed Control**: A global seed is set in `configs/cifar10.yaml` to ensure deterministic behavior.
+- **Hardware**: The code automatically detects and uses CUDA if available.
+- **Protocol**: Uses the `from_task0_pretrained` protocol, where Task 0 provides the feature initialization for all subsequent CL experiments.
 
-## Metricas de transferencia y olvido
-
-En la seccion 4.4 se calculan metricas sobre la matriz task-wise `A[t, k]`
-(accuracy en tarea `k` luego de aprender hasta el paso `t`):
-
-- `Forgetting (max-history)` (recomendado): `F[t, k] = max_{l<t} A[l, k] - A[t, k]` para `k < t`.
-- `BWT`: `BWT[t, k] = A[t, k] - A[t0(k), k]`, donde `t0(k)` es el primer paso en que aparece la tarea `k`.
-
-El promedio por paso se calcula solo sobre tareas pasadas (`k < t`), evitando incluir
-la tarea actual en el promedio.
-
-Nota sobre matrices task-wise:
-- `taskwise_class_il_matrix`: evalua por tarea, pero con decision global Class-IL (argmax sobre todos los logits).
-- `taskwise_task_il_matrix`: evalua por tarea con decision restringida a las clases de la tarea (Task-IL).
-
-Si el checkpoint existe, el notebook carga; si no existe, entrena y guarda automaticamente.
-Si existe pero no cumple el protocolo `from_task0_pretrained`, se re-entrena y se sobre-escribe.
-
-## Notas de reproducibilidad
-
-- El split por defecto es Seq-CIFAR-10 con 5 tareas x 2 clases.
-- Seed global configurable desde `configs/cifar10.yaml`.
-- `data/` y `outputs/` no se versionan.
+---
+**Course:** I309 - Advanced Computer Vision | **Students:** Mateo Giacometti, Tiziano Bernal.

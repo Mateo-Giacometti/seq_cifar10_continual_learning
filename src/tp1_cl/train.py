@@ -5,6 +5,7 @@ from typing import Dict, List, Literal, Optional, Tuple
 import numpy as np
 import torch
 import torch.nn as nn
+from sklearn.metrics import confusion_matrix
 
 from .models import ContinualClassifier, SupConLoss, SupConNetwork
 
@@ -42,6 +43,25 @@ def extract_features(
     device: torch.device,
     max_samples: int = 2000,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Extract features from a backbone network for a given data loader.
+
+    Parameters
+    ----------
+    backbone : nn.Module
+        The backbone network to extract features from.
+    loader : torch.utils.data.DataLoader
+        The data loader containing the data to extract features from.
+    device : torch.device
+        The device to use for feature extraction.
+    max_samples : int
+        The maximum number of samples to extract features from.
+
+    Returns
+    -------
+    Tuple[torch.Tensor, torch.Tensor]
+        A tuple containing the features and the labels.
+    """
     backbone.eval()
     feats_list = []
     labels_list = []
@@ -72,12 +92,39 @@ def train_supcon(
     snapshot_epochs: Dict[int, str],
     scheduler: torch.optim.lr_scheduler._LRScheduler | None = None,
 ) -> Tuple[List[float], Dict[str, Tuple[torch.Tensor, torch.Tensor]]]:
+    """
+    Train the SupCon model.
+
+    Parameters
+    ----------
+    model : SupConNetwork
+        The SupCon model to train.
+    train_loader : torch.utils.data.DataLoader
+        The data loader containing the training data.
+    eval_loader_for_snapshots : torch.utils.data.DataLoader
+        The data loader containing the evaluation data for snapshots.
+    criterion : SupConLoss
+        The SupCon loss function.
+    optimizer : torch.optim.Optimizer
+        The optimizer to use for training.
+    device : torch.device
+        The device to use for training.
+    epochs : int
+        The number of epochs to train for.
+    snapshot_epochs : Dict[int, str]
+        A dictionary containing the epoch numbers and the names of the snapshots.
+    scheduler : torch.optim.lr_scheduler._LRScheduler | None, optional
+        The learning rate scheduler, by default None.
+
+    Returns
+    -------
+    Tuple[List[float], Dict[str, Tuple[torch.Tensor, torch.Tensor]]]
+        A tuple containing the losses and the snapshots.
+    """ 
     losses: List[float] = []
     snapshots: Dict[str, Tuple[torch.Tensor, torch.Tensor]] = {}
 
-    start_feat, start_lab = extract_features(
-        model.backbone, eval_loader_for_snapshots, device=device
-    )
+    start_feat, start_lab = extract_features(model.backbone, eval_loader_for_snapshots, device=device)
     snapshots["inicio"] = (start_feat, start_lab)
 
     for epoch in range(1, epochs + 1):
@@ -105,6 +152,7 @@ def train_supcon(
         losses.append(epoch_loss)
         if scheduler is not None:
             scheduler.step()
+       
         print(f"SupCon | Epoch {epoch:02d}/{epochs} | Loss = {epoch_loss:.4f}")
 
         if epoch in snapshot_epochs:
@@ -130,6 +178,25 @@ def evaluate_linear(
     loader: torch.utils.data.DataLoader,
     device: torch.device,
 ) -> float:
+    """
+    Evaluate the linear head on the given data loader.
+
+    Parameters
+    ----------
+    backbone : nn.Module
+        The backbone network to evaluate.
+    linear_head : nn.Module
+        The linear head to evaluate.
+    loader : torch.utils.data.DataLoader
+        The data loader containing the data to evaluate on.
+    device : torch.device
+        The device to use for evaluation.
+
+    Returns
+    -------
+    float
+        The accuracy of the linear head on the given data loader.
+    """
     backbone.eval()
     linear_head.eval()
     correct = 0
@@ -161,6 +228,37 @@ def train_linear_head(
     scheduler_gamma: float = 0.2,
     report_best: bool = False,
 ) -> Tuple[Dict[str, List[float]], float]:
+    """
+    Train the linear head.
+
+    Parameters
+    ----------
+    backbone : nn.Module
+        The backbone network to train.
+    linear_head : nn.Module
+        The linear head to train.
+    train_loader : torch.utils.data.DataLoader
+        The data loader containing the training data.
+    test_loader : torch.utils.data.DataLoader
+        The data loader containing the test data.
+    device : torch.device
+        The device to use for training.
+    epochs : int
+        The number of epochs to train for.
+    lr : float
+        The learning rate.
+    scheduler_milestones : Optional[List[int]]
+        The learning rate scheduler milestones.
+    scheduler_gamma : float
+        The learning rate scheduler gamma.
+    report_best : bool
+        Whether to report the best accuracy.
+
+    Returns
+    -------
+    Tuple[Dict[str, List[float]], float]
+        A tuple containing the history and the best accuracy.
+    """  
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(
         linear_head.parameters(), lr=lr, momentum=0.9, weight_decay=0.0
@@ -179,6 +277,7 @@ def train_linear_head(
         milestones=scheduler_milestones,
         gamma=scheduler_gamma,
     )
+    
     history: Dict[str, List[float]] = {
         "train_loss": [],
         "train_acc": [],
@@ -223,8 +322,8 @@ def train_linear_head(
         scheduler.step()
 
         print(
-            f"Linear Eval | epoch {epoch:02d}/{epochs} | "
-            f"train_loss={train_loss:.4f} | train_acc={train_acc:.2f}% | test_acc={test_acc:.2f}%"
+            f"Linear Eval | Epoch {epoch:02d}/{epochs} | "
+            f"Train Loss = {train_loss:.4f} | Train Acc = {train_acc:.2f}% | Test Acc = {test_acc:.2f}%"
         )
 
     metric = max(history["test_acc"]) if report_best else history["test_acc"][-1]
@@ -234,6 +333,21 @@ def train_linear_head(
 def _resolve_task_ids(
     loaders: Dict[int, torch.utils.data.DataLoader], task_ids: Optional[List[int]]
 ) -> List[int]:
+    """
+    Resolve the task ids.
+
+    Parameters
+    ----------
+    loaders : Dict[int, torch.utils.data.DataLoader]
+        A dictionary containing the task ids and the data loaders.
+    task_ids : Optional[List[int]]
+        The task ids to resolve.
+
+    Returns
+    -------
+    List[int]
+        The resolved task ids.
+    """  
     available_task_ids = sorted(loaders.keys())
     if task_ids is None:
         return available_task_ids
@@ -251,6 +365,25 @@ def evaluate_class_il(
     seen_task_ids: List[int],
     device: torch.device,
 ) -> float:
+    """
+    Evaluate the class-incremental learning model.
+
+    Parameters
+    ----------
+    model : nn.Module
+        The model to evaluate.
+    test_loaders : Dict[int, torch.utils.data.DataLoader]
+        A dictionary containing the task ids and the data loaders.
+    seen_task_ids : List[int]
+        The task ids that have been seen.
+    device : torch.device
+        The device to use for evaluation.
+
+    Returns
+    -------
+    float
+        The accuracy of the model on the given data loader.
+    """  
     model.eval()
     correct = 0
     total = 0
@@ -278,6 +411,27 @@ def evaluate_task_il(
     seen_task_ids: List[int],
     device: torch.device,
 ) -> float:
+    """
+    Evaluate the task-incremental learning model.
+
+    Parameters
+    ----------
+    model : nn.Module
+        The model to evaluate.
+    test_loaders : Dict[int, torch.utils.data.DataLoader]
+        A dictionary containing the task ids and the data loaders.
+    task_classes : List[List[int]]
+        A list containing the task classes.
+    seen_task_ids : List[int]
+        The task ids that have been seen.
+    device : torch.device
+        The device to use for evaluation.
+
+    Returns
+    -------
+    float
+        The accuracy of the model on the given data loader.
+    """  
     model.eval()
     correct = 0
     total = 0
@@ -311,13 +465,27 @@ def evaluate_taskwise_class_il(
     device: torch.device,
     n_tasks: Optional[int] = None,
 ) -> List[float]:
-    """Per-task Class-IL accuracy for all seen tasks.
-
-    This metric evaluates each task test loader independently, but keeps the
-    Class-IL decision rule: argmax over all global logits (no task mask).
-
-    Returns a dense list of length `n_tasks` with NaN for tasks not yet seen.
     """
+    Evaluate the taskwise class-incremental learning model.
+
+    Parameters
+    ----------
+    model : nn.Module
+        The model to evaluate.
+    test_loaders : Dict[int, torch.utils.data.DataLoader]
+        A dictionary containing the task ids and the data loaders.
+    seen_task_ids : List[int]
+        The task ids that have been seen.
+    device : torch.device
+        The device to use for evaluation.
+    n_tasks : Optional[int], optional
+        The number of tasks, by default None.
+
+    Returns
+    -------
+    List[float]
+        A list containing the accuracy of the model on the given data loader.
+    """  
     if n_tasks is None:
         n_tasks = len(test_loaders)
 
@@ -351,34 +519,49 @@ def evaluate_taskwise_task_il(
     device: torch.device,
     n_tasks: Optional[int] = None,
 ) -> List[float]:
-    """Per-task Task-IL accuracy for all seen tasks.
-
-    Returns a dense list of length `n_tasks` with NaN for tasks not yet seen.
     """
+    Evaluate the taskwise task-incremental learning model.
+
+    Parameters
+    ----------
+    model : nn.Module
+        The model to evaluate.
+    test_loaders : Dict[int, torch.utils.data.DataLoader]
+        A dictionary containing the task ids and the data loaders.
+    task_classes : List[List[int]]
+        A list containing the task classes.
+    seen_task_ids : List[int]
+        The task ids that have been seen.
+    device : torch.device
+        The device to use for evaluation.
+    n_tasks : Optional[int], optional
+        The number of tasks, by default None.
+
+    Returns
+    -------
+    List[float]
+        A list containing the accuracy of the model on the given data loader.
+    """  
     if n_tasks is None:
         n_tasks = len(task_classes)
 
     out = [float("nan")] * n_tasks
     model.eval()
-
     for task_id in seen_task_ids:
         allowed_classes = torch.tensor(task_classes[task_id], device=device)
         loader = test_loaders[task_id]
         correct = 0
         total = 0
-
         for images, labels in loader:
             images = images.to(device, non_blocking=True)
             labels = labels.to(device, non_blocking=True)
-
             logits = model(images)
             task_logits = logits[:, allowed_classes]
             task_preds_local = task_logits.argmax(dim=1)
             task_preds_global = allowed_classes[task_preds_local]
-
             correct += (task_preds_global == labels).sum().item()
             total += labels.size(0)
-
+        out[task_id] = 0.0 if total == 0 else 100.0 * correct / total
     return out
 
 
@@ -389,9 +572,26 @@ def get_confusion_matrix(
     device: torch.device,
     num_classes: int = 10,
 ) -> np.ndarray:
-    """Compute a confusion matrix for the given model and data loader."""
-    import numpy as np
-    from sklearn.metrics import confusion_matrix
+    """
+    Compute the confusion matrix for the given model and data loader.
+
+    Parameters
+    ----------
+    model : nn.Module
+        The model to evaluate.
+    loader : torch.utils.data.DataLoader
+        The data loader containing the data to evaluate on.
+    device : torch.device
+        The device to use for evaluation.
+    num_classes : int, optional
+        The number of classes, by default 10.
+
+    Returns
+    -------
+    np.ndarray
+        The confusion matrix.
+    """  
+
     model.eval()
     all_preds = []
     all_labels = []
@@ -415,6 +615,21 @@ def _ewc_penalty(
     model: nn.Module,
     ewc_terms: List[Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]],
 ) -> torch.Tensor:
+    """
+    Compute the EWC penalty for the given model and EWC terms.
+
+    Parameters
+    ----------
+    model : nn.Module
+        The model to evaluate.
+    ewc_terms : List[Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]]
+        A list containing the EWC terms.
+
+    Returns
+    -------
+    torch.Tensor
+        The EWC penalty.
+    """  
     if len(ewc_terms) == 0:
         return torch.tensor(0.0, device=next(model.parameters()).device)
 
@@ -438,6 +653,27 @@ def _compute_fisher_diagonal(
     max_batches: Optional[int] = None,
     fisher_loss_mode: Literal["ce", "nll_true", "nll_pred"] = "ce",
 ) -> Dict[str, torch.Tensor]:
+    """
+    Compute the Fisher diagonal for the given model and data loader.
+
+    Parameters
+    ----------
+    model : nn.Module
+        The model to evaluate.
+    loader : torch.utils.data.DataLoader
+        The data loader containing the data to evaluate on.
+    device : torch.device
+        The device to use for evaluation.
+    max_batches : Optional[int], optional
+        The maximum number of batches to use for evaluation, by default None.
+    fisher_loss_mode : Literal["ce", "nll_true", "nll_pred"], optional
+        The Fisher loss mode, by default "ce".
+
+    Returns
+    -------
+    Dict[str, torch.Tensor]
+        The Fisher diagonal.
+    """  
     if fisher_loss_mode not in {"ce", "nll_true", "nll_pred"}:
         raise ValueError(
             "fisher_loss_mode must be one of {'ce', 'nll_true', 'nll_pred'}"
@@ -488,6 +724,19 @@ def _compute_fisher_diagonal(
 
 
 def _snapshot_parameters(model: nn.Module) -> Dict[str, torch.Tensor]:
+    """
+    Snapshot the parameters of the given model.
+
+    Parameters
+    ----------
+    model : nn.Module
+        The model to snapshot.
+
+    Returns
+    -------
+    Dict[str, torch.Tensor]
+        The snapshot of the parameters.
+    """  
     return {
         name: param.detach().clone()
         for name, param in model.named_parameters()
@@ -508,6 +757,35 @@ def _train_task_classifier(
     ] = None,
     ewc_lambda: float = 0.0,
 ) -> float:
+    """
+    Train the continual classifier.
+
+    Parameters
+    ----------
+    model : nn.Module
+        The model to train.
+    train_loader : torch.utils.data.DataLoader
+        The data loader containing the data to train on.
+    optimizer : torch.optim.Optimizer
+        The optimizer to use for training.
+    device : torch.device
+        The device to use for training.
+    epochs : int
+        The number of epochs to train for.
+    task_id : int
+        The task id.
+    verbose : bool
+        Whether to print the training progress.
+    ewc_terms : Optional[List[Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]], optional]
+        A list containing the EWC terms, by default None.
+    ewc_lambda : float, optional
+        The EWC lambda parameter, by default 0.0.
+
+    Returns
+    -------
+    float
+        The average loss.
+    """  
     criterion = nn.CrossEntropyLoss()
     avg_loss = 0.0
 
@@ -535,7 +813,7 @@ def _train_task_classifier(
         if verbose:
             print(
                 f"Task {task_id} | Epoch {epoch:02d}/{epochs} | "
-                f"train_loss={avg_loss:.4f}"
+                f"Train Loss = {avg_loss:.4f}"
             )
 
     return avg_loss

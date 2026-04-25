@@ -1,7 +1,4 @@
-"""Shared utilities for continual learning method implementations."""
-
 from __future__ import annotations
-
 from typing import Dict, List, Optional
 
 
@@ -10,7 +7,8 @@ def append_baseline_row(
     baseline: Optional[Dict[str, object]],
     extra_keys: Optional[Dict[str, float]] = None,
 ) -> None:
-    """Append Task-0 baseline metrics to a method's history dict.
+    """
+    Append Task-0 baseline metrics to a method's history dict.
 
     Parameters
     ----------

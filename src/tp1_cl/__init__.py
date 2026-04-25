@@ -1,5 +1,3 @@
-"""Utilities for TP1 Continual Learning sections 4.1 to 4.3."""
-
 from .checkpoints import ensure_checkpoint_dir, load_checkpoint, save_checkpoint
 from .config import ConfigNode, load_config
 from .bootstrap import (
@@ -48,14 +46,15 @@ from .viz import (
     compute_final_transfer_metrics,
     compute_forgetting_matrix,
     plot_cl_metrics,
+    plot_forgetting_metrics,
+    plot_bwt_metrics,
+    plot_forgetting_curves,
     plot_bwt_curves,
     plot_confusion_matrix,
-    plot_cl_training_losses,
     plot_embedding_snapshots,
-    plot_final_accuracy_bars,
     plot_final_embeddings_comparison,
+    plot_single_method_embeddings,
     plot_forgetting_by_task,
-    plot_forgetting_curves,
     plot_linear_history,
     plot_methods_comparison_class_il,
     plot_methods_comparison_task_il,
@@ -116,15 +115,16 @@ __all__ = [
     "plot_embedding_snapshots",
     "plot_linear_history",
     "plot_cl_metrics",
+    "plot_forgetting_metrics",
+    "plot_bwt_metrics",
+    "plot_single_method_embeddings",
     "plot_methods_comparison_class_il",
     "plot_methods_comparison_task_il",
     "plot_forgetting_curves",
     "plot_forgetting_by_task",
     "plot_bwt_curves",
     "plot_taskwise_heatmap",
-    "plot_cl_training_losses",
     "plot_final_embeddings_comparison",
-    "plot_final_accuracy_bars",
     "plot_confusion_matrix",
     # Metrics
     "compute_forgetting_matrix",

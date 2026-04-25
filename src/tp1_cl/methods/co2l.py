@@ -20,11 +20,24 @@ from ..train import (
     evaluate_taskwise_task_il,
 )
 
-
 from ._utils import append_baseline_row
 
-
 def _clone_replay_buffer(source: ReservoirReplayBuffer, seed: int) -> ReservoirReplayBuffer:
+    """
+    Clones a replay buffer.
+
+    Parameters
+    ----------
+    source : ReservoirReplayBuffer
+        The replay buffer to clone.
+    seed : int
+        The seed to use for cloning.
+   
+    Returns
+    -------
+    ReservoirReplayBuffer
+        The cloned replay buffer.
+    """
     out = ReservoirReplayBuffer(capacity=source.capacity, seed=seed)
     out.images = [img.clone() for img in source.images]
     out.labels = list(source.labels)
@@ -34,17 +47,46 @@ def _clone_replay_buffer(source: ReservoirReplayBuffer, seed: int) -> ReservoirR
 
 class _TensorDataset(Dataset):
     def __init__(self, images: torch.Tensor, labels: torch.Tensor) -> None:
+        """
+        Initialize the TensorDataset.
+        
+        Parameters
+        ----------
+        images : torch.Tensor
+            The images.
+        labels : torch.Tensor
+            The labels.
+        """
         self.images = images
         self.labels = labels
 
     def __len__(self) -> int:
+        """ 
+        Return the number of samples.
+        """
         return self.labels.size(0)
 
     def __getitem__(self, idx: int):
+        """
+        Return the sample at the given index.
+        """
         return self.images[idx], self.labels[idx]
 
 
 def _make_balanced_sampler(labels: torch.Tensor) -> WeightedRandomSampler:
+    """
+    Make a balanced sampler.
+    
+    Parameters
+    ----------
+    labels : torch.Tensor
+        The labels.
+    
+    Returns
+    -------
+    WeightedRandomSampler
+        The balanced sampler.
+    """
     classes, counts = labels.unique(return_counts=True)
     weight_per_class = 1.0 / counts.float()
     weights = weight_per_class[
@@ -62,7 +104,35 @@ def _make_co2l_scheduler(
     epochs: int,
     warmup_epochs: int,
 ) -> torch.optim.lr_scheduler.LambdaLR:
+    """
+    Make a scheduler for Co2L.
+    
+    Parameters
+    ----------
+    optimizer : torch.optim.Optimizer
+        The optimizer.
+    epochs : int
+        The number of epochs.
+    warmup_epochs : int
+        The number of warmup epochs.
+   
+    Returns
+    -------
+    torch.optim.lr_scheduler.LambdaLR
+        The scheduler.
+    """
     def lr_lambda(epoch: int) -> float:
+        """
+        Calculate the learning rate.
+        Parameters
+        ----------
+        epoch : int
+            The current epoch.
+        Returns
+        -------
+        float
+            The learning rate.
+        """
         if epoch < warmup_epochs:
             return float(epoch + 1) / float(max(1, warmup_epochs))
         if epochs == warmup_epochs:
@@ -78,6 +148,23 @@ def _random_resized_crop_batch(
     scale: Tuple[float, float] = (0.2, 1.0),
     ratio: Tuple[float, float] = (0.75, 1.3333333333333333),
 ) -> torch.Tensor:
+    """
+    Perform random resized crop on a batch of images.
+    
+    Parameters
+    ----------
+    images : torch.Tensor
+        The images.
+    scale : Tuple[float, float]
+        The scale.
+    ratio : Tuple[float, float]
+        The ratio.
+    
+    Returns
+    -------
+    torch.Tensor
+        The cropped images.
+    """
     if images.dim() != 4:
         raise ValueError("Expected images with shape (B, C, H, W)")
 
@@ -122,6 +209,19 @@ def _random_resized_crop_batch(
 
 
 def _augment_buffer_batch(images: torch.Tensor) -> torch.Tensor:
+    """
+    Augment a batch of images.
+
+    Parameters
+    ----------
+    images : torch.Tensor
+        The images.
+    
+    Returns
+    -------
+    torch.Tensor
+        The augmented images.
+    """
     if images.dim() != 4:
         raise ValueError("Expected images with shape (B, C, H, W)")
     if images.size(0) == 0:
@@ -173,6 +273,19 @@ def _augment_buffer_batch(images: torch.Tensor) -> torch.Tensor:
 
 
 def _extract_images_labels(batch: object) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Extract images and labels from a batch.
+
+    Parameters
+    ----------
+    batch : object
+        The batch.
+
+    Returns
+    -------
+    Tuple[torch.Tensor, torch.Tensor]
+        The images and labels.
+    """
     if not isinstance(batch, (tuple, list)):
         raise ValueError("Expected batch to be a tuple/list")
 
@@ -192,6 +305,18 @@ def _extract_images_labels(batch: object) -> Tuple[torch.Tensor, torch.Tensor]:
 
 
 def _collect_images_labels_from_loader(loader: DataLoader) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Collect images and labels from a loader.
+
+    Parameters
+    ----------
+    loader : DataLoader
+        The loader.
+    Returns
+    -------
+    Tuple[torch.Tensor, torch.Tensor]
+        The images and labels.
+    """
     images_list: List[torch.Tensor] = []
     labels_list: List[torch.Tensor] = []
     for batch in loader:
@@ -221,6 +346,45 @@ def _train_linear_head_balanced(
     gamma: float,
     batch_size: int = 256,
 ) -> ContinualClassifier:
+    """
+    Train a linear head on balanced data.
+
+    Parameters
+    ----------
+    backbone : nn.Module
+        The backbone.
+    feat_dim : int
+        The feature dimension.
+    train_images : torch.Tensor
+        The training images.
+    train_labels : torch.Tensor
+        The training labels.
+    test_loaders : Dict[int, DataLoader]
+        The test loaders.
+    task_classes : List[List[int]]
+        The task classes.
+    seen_task_ids : List[int]
+        The seen task ids.
+    device : torch.device
+        The device.
+    num_classes : int
+        The number of classes.
+    epochs : int
+        The number of epochs.
+    lr : float
+        The learning rate.
+    milestones : List[int]
+        The milestones.
+    gamma : float
+        The gamma.
+    batch_size : int
+        The batch size.
+    
+    Returns
+    -------
+    ContinualClassifier
+        The trained classifier.
+    """
     model = ContinualClassifier(
         backbone=deepcopy(backbone),
         feat_dim=feat_dim,
@@ -269,8 +433,8 @@ def _train_linear_head_balanced(
     class_il = evaluate_class_il(model, test_loaders, seen_task_ids, device)
     task_il = evaluate_task_il(model, test_loaders, task_classes, seen_task_ids, device)
     model.classifier.eval()
-    model.class_il_metric = class_il  # type: ignore[attr-defined]
-    model.task_il_metric = task_il  # type: ignore[attr-defined]
+    model.class_il_metric = class_il
+    model.task_il_metric = task_il
     return model
 
 
@@ -309,6 +473,82 @@ def train_co2l(
     baseline_payload: Optional[Dict[str, object]] = None,
     verbose: bool = True,
 ) -> Tuple[SupConNetwork, Dict[str, object]]:
+    """
+    Train the Co2L model.
+
+    Parameters
+    ----------
+    backbone : nn.Module
+        The backbone.
+    feat_dim : int
+        The feature dimension.
+    train_loaders : Dict[int, DataLoader]
+        The training loaders.
+    test_loaders : Dict[int, DataLoader]
+        The test loaders.
+    task_classes : List[List[int]]
+        The task classes.
+    device : torch.device
+        The device.
+    num_classes : int
+        The number of classes.
+    proj_dim : int
+        The projection dimension.
+    buffer_size : int
+        The buffer size.
+    lr : float
+        The learning rate.
+    momentum : float
+        The momentum.
+    weight_decay : float
+        The weight decay.
+    temperature : float
+        The temperature.
+    kappa : float
+        The kappa.
+    kappa_star : float
+        The kappa star.
+    lambda_ird : float
+        The lambda ird.
+    warmup_epochs : int
+        The number of warmup epochs.
+    epochs_task0 : int
+        The number of epochs for task 0.
+    epochs_per_task : int
+        The number of epochs per task.
+    eval_linear_epochs : int
+        The number of epochs for linear evaluation.
+    eval_linear_lr : float
+        The learning rate for linear evaluation.
+    eval_linear_milestones : Optional[List[int]]
+        The milestones for linear evaluation.
+    eval_linear_gamma : float
+        The gamma for linear evaluation.
+    train_loaders_eval : Optional[Dict[int, DataLoader]]
+        The training loaders for evaluation.
+    task_ids : Optional[List[int]]
+        The task ids.
+    seed : int
+        The seed.
+    max_replay_batch_size : Optional[int]
+        The maximum replay batch size.
+    initial_model : Optional[SupConNetwork]
+        The initial model.
+    initial_seen_task_ids : Optional[List[int]]
+        The initial seen task ids.
+    initial_past_model : Optional[SupConNetwork]
+        The initial past model.
+    initial_buffer : Optional[ReservoirReplayBuffer]
+        The initial buffer.
+    baseline_payload : Optional[Dict[str, object]]
+        The baseline payload.
+    verbose : bool
+        Whether to print verbose output.
+    Returns
+    -------
+    Tuple[SupConNetwork, Dict[str, object]]
+        The trained model and the history.
+    """
     if eval_linear_milestones is None:
         eval_linear_milestones = [60, 75, 90]
 
@@ -447,7 +687,7 @@ def train_co2l(
             if verbose and (epoch % 10 == 0 or epoch == epochs):
                 print(
                     f"Co2L | Task {task_id} | Epoch {epoch:03d}/{epochs} | "
-                    f"loss={epoch_loss:.4f} | ird={epoch_ird:.4f}"
+                    f"Loss = {epoch_loss:.4f} | IRD = {epoch_ird:.4f}"
                 )
 
         past_model = deepcopy(model).to(device).eval()
@@ -490,8 +730,8 @@ def train_co2l(
             gamma=eval_linear_gamma,
             batch_size=256,
         )
-        class_il_acc = float(eval_model.class_il_metric)  # type: ignore[attr-defined]
-        task_il_acc = float(eval_model.task_il_metric)  # type: ignore[attr-defined]
+        class_il_acc = float(eval_model.class_il_metric)  
+        task_il_acc = float(eval_model.task_il_metric)  
 
         history["task_id"].append(float(task_id))
         history["train_loss"].append(sum(epoch_losses) / len(epoch_losses))
@@ -521,7 +761,7 @@ def train_co2l(
         if verbose:
             print(
                 f"Task {task_id} done (Co2L) | "
-                f"Class-IL={class_il_acc:.2f}% | Task-IL={task_il_acc:.2f}%"
+                f"Class-IL = {class_il_acc:.2f}% | Task-IL = {task_il_acc:.2f}%"
             )
 
     return model, history

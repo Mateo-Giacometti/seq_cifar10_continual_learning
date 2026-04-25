@@ -26,6 +26,23 @@ def _cross_entropy_on_class_subset(
     labels: torch.Tensor,
     class_ids: torch.Tensor,
 ) -> torch.Tensor:
+    """
+    Compute cross entropy on a subset of classes.
+    
+    Parameters
+    ----------
+    logits : torch.Tensor
+        The logits.
+    labels : torch.Tensor
+        The labels.
+    class_ids : torch.Tensor
+        The class ids.
+    
+    Returns
+    -------
+    torch.Tensor
+        The cross entropy.
+    """
     if class_ids.numel() == 0:
         return torch.tensor(0.0, device=logits.device)
 
@@ -62,6 +79,61 @@ def train_er_ace(
     baseline_payload: Optional[Dict[str, object]] = None,
     verbose: bool = True,
 ) -> Tuple[nn.Module, Dict[str, object]]:
+    """
+    Train the ER-ACE model.
+
+    Parameters
+    ----------
+    backbone : nn.Module
+        The backbone.
+    feat_dim : int
+        The feature dimension.
+    train_loaders : Dict[int, DataLoader]
+        The training loaders.
+    test_loaders : Dict[int, DataLoader]
+        The test loaders.
+    task_classes : List[List[int]]
+        The task classes.
+    device : torch.device
+        The device.
+    num_classes : int
+        The number of classes.
+    epochs_per_task : int
+        The number of epochs per task.
+    lr : float
+        The learning rate.
+    momentum : float
+        The momentum.
+    weight_decay : float
+        The weight decay.
+    buffer_size : int
+        The buffer size.
+    replay_batch_size : int
+        The replay batch size.
+    incoming_weight : float
+        The incoming weight.
+    replay_weight : float
+        The replay weight.
+    task_ids : Optional[List[int]]
+        The task ids.
+    seed : int
+        The seed.
+    initial_model : Optional[ContinualClassifier]
+        The initial model.
+    initial_seen_task_ids : Optional[List[int]]
+        The initial seen task ids.
+    initial_buffer : Optional[ReservoirReplayBuffer]
+        The initial buffer.
+    baseline_payload : Optional[Dict[str, object]]
+        The baseline payload.
+    verbose : bool
+        Whether to print verbose output.
+    
+    Returns
+    -------
+    Tuple[nn.Module, Dict[str, object]]
+        The trained model and the history.
+    """
     selected_task_ids = _resolve_task_ids(train_loaders, task_ids)
 
     model = (
@@ -172,8 +244,8 @@ def train_er_ace(
             if verbose:
                 print(
                     f"ER-ACE | Task {task_id} | Epoch {epoch:02d}/{epochs_per_task} | "
-                    f"loss={avg_total_loss:.4f} | incoming={avg_incoming_loss:.4f} | "
-                    f"replay={avg_replay_loss:.4f}"
+                    f"Loss = {avg_total_loss:.4f} | Incoming = {avg_incoming_loss:.4f} | "
+                    f"Replay = {avg_replay_loss:.4f}"
                 )
 
         for images, labels in train_loaders[task_id]:
@@ -217,8 +289,8 @@ def train_er_ace(
 
         if verbose:
             print(
-                f"Task {task_id} done (ER-ACE) | Class-IL={class_il_acc:.2f}% | "
-                f"Task-IL={task_il_acc:.2f}%"
+                f"Task {task_id} done (ER-ACE) | Class-IL = {class_il_acc:.2f}% | "
+                f"Task-IL = {task_il_acc:.2f}%"
             )
 
     return model, history

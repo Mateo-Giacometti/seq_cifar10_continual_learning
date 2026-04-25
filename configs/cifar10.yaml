@@ -6,7 +6,7 @@ data:
   buffer_size: 200
 
 training:
-  seed: 12 #Ex 96
+  seed: 12 
   batch_size: 256
   num_workers: 8
   dataloader:
@@ -27,10 +27,6 @@ transforms:
   color_jitter_prob: 0.8
   grayscale_prob: 0.2
 
-# SupCon pretraining on Task 0 (classes 0,1).
-# Paper trains 500 epochs; 50 is a pragmatic budget that yields ~82-87% linear
-# accuracy on Task 0 instead of ~92%. Warmup covers the first 20% of training.
-# lr=0.5, tau=0.07 follow the SupCon paper (Khosla et al. 2020) for CIFAR.
 supcon:
   epochs: 50
   lr: 0.5
@@ -41,43 +37,20 @@ supcon:
   warmup_epochs: 10
   proj_dim: 128
 
-# Linear head trained on frozen SupCon backbone for Task 0 evaluation.
-# 50 epochs is sufficient given the backbone is already well-trained.
-# Milestones are expressed as absolute epoch numbers; with epochs=50 they
-# fire at epochs 30, 37, 45 — appropriate for a 50-epoch schedule.
 linear_eval:
   epochs: 10
   lr: 1.0
   milestones: [30, 37, 45]
   gamma: 0.2
 
-# Naive fine-tuning baseline. No replay, no regularization.
-# Schedule: cosine-annealed LR via MultiStepLR decays at 60%/80% of total.
-# lr=0.01 (lowered from 0.03): the backbone is pre-trained, so a smaller lr
-# prevents oscillations in the final epochs and gives a cleaner forgetting curve.
-# weight_decay stays at 1e-4 to regularize the backbone; the classifier head
-# has no weight_decay applied (handled inside _train_task_classifier).
 finetuning:
   epochs_per_task: 50
   lr: 0.1
   momentum: 0.9
   weight_decay: 1.0e-4
-  # milestones for _train_task_classifier's internal scheduler (not currently
-  # used — add a MultiStepLR inside _train_task_classifier if needed).
-  # Leaving lr_milestones here as a documentation hint.
   lr_milestones: [30, 40]
   lr_gamma: 0.2
 
-# EWC (Kirkpatrick et al. 2017).
-# lambda_ewc=5.0: lowered from 25.0. With a SupCon-pretrained backbone the
-# Fisher values on early layers are large, so lambda=25 essentially freezes
-# the entire network (the penalty dominates the CE gradient). lambda=5 gives
-# the EWC constraint enough weight to protect Task 0 without blocking learning.
-# Empirically on Seq-CIFAR-10 from a pretrained backbone, lambda in [1, 10]
-# produces better Class-IL than larger values.
-# fisher_loss_mode=nll_pred follows the original EWC paper's prescription:
-# use the gradient of the log-probability of the predicted class (not CE over
-# all classes), which gives a cleaner estimate of parameter importance.
 ewc:
   epochs_per_task: 50
   lr: 0.01
@@ -87,16 +60,6 @@ ewc:
   fisher_max_batches: 100
   fisher_loss_mode: nll_pred
 
-# LwF (Li & Hoiem 2018).
-# Expected behavior note: LwF is known to perform poorly under Class-IL with
-# disjoint class sets. The teacher produces logits for old classes on NEW task
-# images (out-of-distribution), so distillation injects noisy gradients that
-# interfere with learning the current task. This is documented in the Co2L
-# paper (Table 1 excludes LwF as a baseline for this reason).
-# alpha=0.5: lowered from 1.0 to reduce the weight of the noisy distillation
-# signal, giving CE more room to learn the new task. This improves Task-IL
-# slightly but does not fix the fundamental Class-IL limitation.
-# temperature=2.0 follows the original paper recommendation.
 lwf:
   epochs_per_task: 50
   lr: 0.01
@@ -105,21 +68,6 @@ lwf:
   temperature: 2.0
   alpha: 0.5
 
-# Co2L (Cha et al. ICCV 2021).
-# epochs_task0 is unused under from_task0_pretrained protocol (task_ids=[1,2,3,4]),
-# so task_id=0 is never processed by Co2L — the SupCon checkpoint covers it.
-# All CL tasks use epochs_per_task=50.
-#
-# Contrastive training hyperparameters follow the paper's Seq-CIFAR-10 setting
-# (Table 4 in appendix): lr=0.5, tau=0.5, kappa=0.2, kappa*=0.01, lambda=1.0.
-#
-# batch_size=64 for Co2L contrastive loader (smaller than 256 due to the
-# two-view overhead and buffer concatenation; fits standard GPU memory).
-#
-# eval_linear_epochs=100 with milestones [60,75,90]: this is exactly the
-# Co2L paper's linear evaluation protocol. With only 50 representation-learning
-# epochs the linear classifier may not fully converge, but 100 eval epochs
-# gives it the best chance.
 co2l:
   epochs_task0: 50
   epochs_per_task: 50
@@ -138,10 +86,6 @@ co2l:
   eval_linear_milestones: [60, 75, 90]
   eval_linear_gamma: 0.2
 
-# ER-ACE (optional method).
-# lr=0.01 aligned with other methods for fair comparison.
-# replay_batch_size=128: with buffer_size=200 this samples ~64% of the buffer
-# each step, which gives sufficient coverage without overfitting to buffer.
 er_ace:
   epochs_per_task: 50
   lr: 0.01

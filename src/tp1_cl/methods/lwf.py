@@ -23,6 +23,23 @@ def _distillation_loss(
     teacher_logits: torch.Tensor,
     temperature: float,
 ) -> torch.Tensor:
+    """
+    Compute the distillation loss.
+
+    Parameters
+    ----------
+    student_logits : torch.Tensor
+        The student logits.
+    teacher_logits : torch.Tensor
+        The teacher logits.
+    temperature : float
+        The temperature.
+
+    Returns
+    -------
+    torch.Tensor
+        The distillation loss.
+    """
     student_log_probs = F.log_softmax(student_logits / temperature, dim=1)
     teacher_probs = F.softmax(teacher_logits / temperature, dim=1)
     return F.kl_div(student_log_probs, teacher_probs, reduction="batchmean") * (
@@ -51,6 +68,55 @@ def train_lwf(
     baseline_payload: Optional[Dict[str, object]] = None,
     verbose: bool = True,
 ) -> Tuple[nn.Module, Dict[str, object]]:
+    """
+    Train the Learning without Forgetting (LwF) model.
+
+    Parameters
+    ----------
+    backbone : nn.Module
+        The backbone.
+    feat_dim : int
+        The feature dimension.
+    train_loaders : Dict[int, DataLoader]
+        The training loaders.
+    test_loaders : Dict[int, DataLoader]
+        The test loaders.
+    task_classes : List[List[int]]
+        The task classes.
+    device : torch.device
+        The device.
+    num_classes : int
+        The number of classes.
+    epochs_per_task : int
+        The number of epochs per task.
+    lr : float
+        The learning rate.
+    momentum : float
+        The momentum.
+    weight_decay : float
+        The weight decay.
+    temperature : float
+        The temperature.
+    alpha : float
+        The alpha.
+    task_ids : Optional[List[int]]
+        The task ids.
+    initial_model : Optional[ContinualClassifier]
+        The initial model.
+    initial_seen_task_ids : Optional[List[int]]
+        The initial seen task ids.
+    initial_teacher_model : Optional[nn.Module]
+        The initial teacher model.
+    baseline_payload : Optional[Dict[str, object]]
+        The baseline payload.
+    verbose : bool
+        Whether to print verbose output.
+
+    Returns
+    -------
+    Tuple[nn.Module, Dict[str, object]]
+        The trained model and the history.
+    """
     selected_task_ids = _resolve_task_ids(train_loaders, task_ids)
 
     model = (
@@ -79,10 +145,6 @@ def train_lwf(
 
     seen_task_ids: List[int] = [] if initial_seen_task_ids is None else list(initial_seen_task_ids)
 
-    # FIX: Auto-initialize teacher from initial_model when initial_teacher_model
-    # is not explicitly provided.  Without this, distillation is skipped for the
-    # first CL task when using the from_task0_pretrained protocol, making LwF
-    # behave identically to naive fine-tuning on that task.
     if initial_teacher_model is not None:
         teacher_model: Optional[nn.Module] = deepcopy(initial_teacher_model).to(device)
     elif initial_model is not None and len(seen_task_ids) > 0:
@@ -107,8 +169,6 @@ def train_lwf(
             else None
         )
 
-        # Reset optimizer per task to avoid momentum carry-over from previous
-        # task distributions.
         optimizer = torch.optim.SGD(
             model.parameters(),
             lr=lr,
@@ -156,7 +216,7 @@ def train_lwf(
             if verbose:
                 print(
                     f"Task {task_id} | Epoch {epoch:02d}/{epochs_per_task} | "
-                    f"train_loss={avg_loss:.4f} | distill={avg_distill:.4f}"
+                    f"Loss = {avg_loss:.4f} | Distill = {avg_distill:.4f}"
                 )
 
         seen_task_ids.append(task_id)
@@ -200,8 +260,8 @@ def train_lwf(
 
         if verbose:
             print(
-                f"Task {task_id} done (LwF) | Class-IL={class_il_acc:.2f}% | "
-                f"Task-IL={task_il_acc:.2f}%"
+                f"Task {task_id} done (LwF) | Class-IL = {class_il_acc:.2f}% | "
+                f"Task-IL = {task_il_acc:.2f}%"
             )
 
     return model, history

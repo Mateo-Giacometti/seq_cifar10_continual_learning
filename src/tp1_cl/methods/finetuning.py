@@ -36,6 +36,49 @@ def train_naive_finetuning(
     baseline_payload: Optional[Dict[str, object]] = None,
     verbose: bool = True,
 ) -> Tuple[nn.Module, Dict[str, object]]:
+    """
+    Train the naive finetuning model.
+
+    Parameters
+    ----------
+    backbone : nn.Module
+        The backbone.
+    feat_dim : int
+        The feature dimension.
+    train_loaders : Dict[int, DataLoader]
+        The training loaders.
+    test_loaders : Dict[int, DataLoader]
+        The test loaders.
+    task_classes : List[List[int]]
+        The task classes.
+    device : torch.device
+        The device.
+    num_classes : int
+        The number of classes.
+    epochs_per_task : int
+        The number of epochs per task.
+    lr : float
+        The learning rate.
+    momentum : float
+        The momentum.
+    weight_decay : float
+        The weight decay.
+    task_ids : Optional[List[int]]
+        The task ids.
+    initial_model : Optional[ContinualClassifier]
+        The initial model.
+    initial_seen_task_ids : Optional[List[int]]
+        The initial seen task ids.
+    baseline_payload : Optional[Dict[str, object]]
+        The baseline payload.
+    verbose : bool
+        Whether to print verbose output.
+    
+    Returns
+    -------
+    Tuple[nn.Module, Dict[str, object]]
+        The trained model and the history.
+    """
     selected_task_ids = _resolve_task_ids(train_loaders, task_ids)
 
     model = (
@@ -62,8 +105,7 @@ def train_naive_finetuning(
 
     seen_task_ids: List[int] = [] if initial_seen_task_ids is None else list(initial_seen_task_ids)
     for task_id in selected_task_ids:
-        # Reset optimizer per task to avoid momentum carry-over from previous
-        # task distributions.
+
         optimizer = torch.optim.SGD(
             model.parameters(),
             lr=lr,
@@ -117,8 +159,8 @@ def train_naive_finetuning(
 
         if verbose:
             print(
-                f"Task {task_id} done | Class-IL={class_il_acc:.2f}% | "
-                f"Task-IL={task_il_acc:.2f}%"
+                f"Task {task_id} done | Class-IL = {class_il_acc:.2f}% | "
+                f"Task-IL = {task_il_acc:.2f}%"
             )
 
     return model, history
