@@ -84,6 +84,3 @@ The project includes a robust visualization module (`tp1_cl.viz`) designed for a
 - **Seed Control**: A global seed is set in `configs/cifar10.yaml` to ensure deterministic behavior.
 - **Hardware**: The code automatically detects and uses CUDA if available.
 - **Protocol**: Uses the `from_task0_pretrained` protocol, where Task 0 provides the feature initialization for all subsequent CL experiments.
-
----
-**Course:** I309 - Advanced Computer Vision | **Students:** Mateo Giacometti, Tiziano Bernal.
