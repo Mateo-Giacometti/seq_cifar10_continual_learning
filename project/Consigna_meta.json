@@ -1,0 +1,609 @@
+{
+  "table_of_contents": [
+    {
+      "title": "Trabajo Pr\u00e1ctico 1 \u2013 Continual Learning",
+      "heading_level": null,
+      "page_id": 0,
+      "polygon": [
+        [
+          101.2734375,
+          115.11700439453125
+        ],
+        [
+          494.7265625,
+          115.11700439453125
+        ],
+        [
+          494.7265625,
+          135.779541015625
+        ],
+        [
+          101.2734375,
+          135.779541015625
+        ]
+      ]
+    },
+    {
+      "title": "Introducci\u00f3n",
+      "heading_level": null,
+      "page_id": 0,
+      "polygon": [
+        [
+          69.552734375,
+          202.9781494140625
+        ],
+        [
+          158.3778076171875,
+          202.9781494140625
+        ],
+        [
+          158.3778076171875,
+          217.3243408203125
+        ],
+        [
+          69.552734375,
+          217.3243408203125
+        ]
+      ]
+    },
+    {
+      "title": "Conjunto de Datos",
+      "heading_level": null,
+      "page_id": 0,
+      "polygon": [
+        [
+          69.84375,
+          423.8779296875
+        ],
+        [
+          201.4307098388672,
+          423.8779296875
+        ],
+        [
+          201.4307098388672,
+          438.3032531738281
+        ],
+        [
+          69.84375,
+          438.3032531738281
+        ]
+      ]
+    },
+    {
+      "title": "2.1. Escenarios de Evaluaci\u00f3n",
+      "heading_level": null,
+      "page_id": 0,
+      "polygon": [
+        [
+          69.26171875,
+          686.1806640625
+        ],
+        [
+          245.77059936523438,
+          686.1806640625
+        ],
+        [
+          245.77059936523438,
+          698.7696838378906
+        ],
+        [
+          69.26171875,
+          698.7696838378906
+        ]
+      ]
+    },
+    {
+      "title": "Objetivo",
+      "heading_level": null,
+      "page_id": 1,
+      "polygon": [
+        [
+          70.716796875,
+          121.6953125
+        ],
+        [
+          130.666015625,
+          121.6953125
+        ],
+        [
+          130.666015625,
+          136.08135986328125
+        ],
+        [
+          70.716796875,
+          136.08135986328125
+        ]
+      ]
+    },
+    {
+      "title": "Etapas del Trabajo",
+      "heading_level": null,
+      "page_id": 1,
+      "polygon": [
+        [
+          70.42578125,
+          211.7333984375
+        ],
+        [
+          203.12890625,
+          211.7333984375
+        ],
+        [
+          203.12890625,
+          226.37738037109375
+        ],
+        [
+          70.42578125,
+          226.37738037109375
+        ]
+      ]
+    },
+    {
+      "title": "4.1. Preparaci\u00f3n del Dataset",
+      "heading_level": null,
+      "page_id": 1,
+      "polygon": [
+        [
+          70.86599731445312,
+          295.193359375
+        ],
+        [
+          240.9609375,
+          295.193359375
+        ],
+        [
+          240.9609375,
+          307.381591796875
+        ],
+        [
+          70.86599731445312,
+          307.381591796875
+        ]
+      ]
+    },
+    {
+      "title": "4.2. Pre-entrenamiento con Aprendizaje Contrastivo Supervisado",
+      "heading_level": null,
+      "page_id": 1,
+      "polygon": [
+        [
+          70.86599731445312,
+          459.2353515625
+        ],
+        [
+          457.4765625,
+          459.2353515625
+        ],
+        [
+          457.4765625,
+          471.378662109375
+        ],
+        [
+          70.86599731445312,
+          471.378662109375
+        ]
+      ]
+    },
+    {
+      "title": "Visualizaciones requeridas:",
+      "heading_level": null,
+      "page_id": 1,
+      "polygon": [
+        [
+          88.46875,
+          649.1804656982422
+        ],
+        [
+          257.5690612792969,
+          649.1804656982422
+        ],
+        [
+          257.5690612792969,
+          661.1356658935547
+        ],
+        [
+          88.46875,
+          661.1356658935547
+        ]
+      ]
+    },
+    {
+      "title": "4.3. M\u00e9todos de Aprendizaje Continuo",
+      "heading_level": null,
+      "page_id": 2,
+      "polygon": [
+        [
+          69.84375,
+          73.5927734375
+        ],
+        [
+          301.29052734375,
+          73.5927734375
+        ],
+        [
+          301.29052734375,
+          85.5556640625
+        ],
+        [
+          69.84375,
+          85.5556640625
+        ]
+      ]
+    },
+    {
+      "title": "4.3.1. Fine-Tuning Naive (Baseline)",
+      "heading_level": null,
+      "page_id": 2,
+      "polygon": [
+        [
+          69.84375,
+          154.5859375
+        ],
+        [
+          288.5582275390625,
+          154.5859375
+        ],
+        [
+          288.5582275390625,
+          167.78265380859375
+        ],
+        [
+          69.84375,
+          167.78265380859375
+        ]
+      ]
+    },
+    {
+      "title": "4.3.2. Elastic Weight Consolidation (EWC)",
+      "heading_level": null,
+      "page_id": 2,
+      "polygon": [
+        [
+          70.42578125,
+          223.6083984375
+        ],
+        [
+          333.0196533203125,
+          223.6083984375
+        ],
+        [
+          333.0196533203125,
+          235.990234375
+        ],
+        [
+          70.42578125,
+          235.990234375
+        ]
+      ]
+    },
+    {
+      "title": "4.3.3. Learning without Forgetting (LwF)",
+      "heading_level": null,
+      "page_id": 2,
+      "polygon": [
+        [
+          69.84375,
+          290.259765625
+        ],
+        [
+          323.64678955078125,
+          290.259765625
+        ],
+        [
+          323.64678955078125,
+          303.3455810546875
+        ],
+        [
+          69.84375,
+          303.3455810546875
+        ]
+      ]
+    },
+    {
+      "title": "4.3.4. Contrastive Continual Learning (Co2L)",
+      "heading_level": null,
+      "page_id": 2,
+      "polygon": [
+        [
+          69.84375,
+          372.0751953125
+        ],
+        [
+          345.712158203125,
+          372.0751953125
+        ],
+        [
+          345.712158203125,
+          385.5725402832031
+        ],
+        [
+          69.84375,
+          385.5725402832031
+        ]
+      ]
+    },
+    {
+      "title": "[Opcional] - M\u00e9todo adicional a elecci\u00f3n",
+      "heading_level": null,
+      "page_id": 2,
+      "polygon": [
+        [
+          80.90234375,
+          586.9624633789062
+        ],
+        [
+          317.2107238769531,
+          586.9624633789062
+        ],
+        [
+          317.2107238769531,
+          598.9176635742188
+        ],
+        [
+          80.90234375,
+          598.9176635742188
+        ]
+      ]
+    },
+    {
+      "title": "4.4. Comparaci\u00f3n de Resultados",
+      "heading_level": null,
+      "page_id": 3,
+      "polygon": [
+        [
+          70.42578125,
+          73.5927734375
+        ],
+        [
+          262.49609375,
+          73.5927734375
+        ],
+        [
+          262.49609375,
+          85.5556640625
+        ],
+        [
+          70.42578125,
+          85.5556640625
+        ]
+      ]
+    },
+    {
+      "title": "Informe y Grupos de Trabajo",
+      "heading_level": null,
+      "page_id": 3,
+      "polygon": [
+        [
+          69.84375,
+          246.40625
+        ],
+        [
+          275.1128845214844,
+          246.40625
+        ],
+        [
+          275.1128845214844,
+          260.75244140625
+        ],
+        [
+          69.84375,
+          260.75244140625
+        ]
+      ]
+    },
+    {
+      "title": "Formatos y Fechas de Entrega",
+      "heading_level": null,
+      "page_id": 3,
+      "polygon": [
+        [
+          70.42578125,
+          337.1061096191406
+        ],
+        [
+          279.5744934082031,
+          337.1061096191406
+        ],
+        [
+          279.5744934082031,
+          351.4523010253906
+        ],
+        [
+          70.42578125,
+          351.4523010253906
+        ]
+      ]
+    }
+  ],
+  "page_stats": [
+    {
+      "page_id": 0,
+      "text_extraction_method": "pdftext",
+      "block_counts": [
+        [
+          "Span",
+          113
+        ],
+        [
+          "Line",
+          37
+        ],
+        [
+          "TableCell",
+          18
+        ],
+        [
+          "Text",
+          7
+        ],
+        [
+          "SectionHeader",
+          4
+        ],
+        [
+          "PageHeader",
+          2
+        ],
+        [
+          "Table",
+          1
+        ],
+        [
+          "PageFooter",
+          1
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    },
+    {
+      "page_id": 1,
+      "text_extraction_method": "pdftext",
+      "block_counts": [
+        [
+          "Span",
+          119
+        ],
+        [
+          "Line",
+          34
+        ],
+        [
+          "ListItem",
+          9
+        ],
+        [
+          "SectionHeader",
+          5
+        ],
+        [
+          "Text",
+          4
+        ],
+        [
+          "ListGroup",
+          3
+        ],
+        [
+          "PageHeader",
+          2
+        ],
+        [
+          "PageFooter",
+          1
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    },
+    {
+      "page_id": 2,
+      "text_extraction_method": "pdftext",
+      "block_counts": [
+        [
+          "Span",
+          137
+        ],
+        [
+          "Line",
+          36
+        ],
+        [
+          "Text",
+          7
+        ],
+        [
+          "SectionHeader",
+          6
+        ],
+        [
+          "ListItem",
+          4
+        ],
+        [
+          "PageHeader",
+          2
+        ],
+        [
+          "PageFooter",
+          1
+        ],
+        [
+          "ListGroup",
+          1
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    },
+    {
+      "page_id": 3,
+      "text_extraction_method": "pdftext",
+      "block_counts": [
+        [
+          "Span",
+          86
+        ],
+        [
+          "Line",
+          25
+        ],
+        [
+          "ListItem",
+          4
+        ],
+        [
+          "Text",
+          4
+        ],
+        [
+          "SectionHeader",
+          3
+        ],
+        [
+          "PageHeader",
+          2
+        ],
+        [
+          "Code",
+          1
+        ],
+        [
+          "PageFooter",
+          1
+        ],
+        [
+          "ListGroup",
+          1
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    }
+  ],
+  "debug_data_path": "debug_data/Consigna"
+}

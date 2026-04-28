@@ -1,0 +1,22 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Local data downloads
+/data/
+
+# Local Python environments
+/.venv/
+/venv/
+
+# Reference material (avoid heavy academic assets in git history)
+/Consigna.pdf
+
+# Optional large artifacts
+*.zip
+*.tar
+*.tar.gz
+*.7z
+
+# Runtime artifacts
+/outputs/
