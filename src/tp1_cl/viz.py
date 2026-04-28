@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Dict, List, Literal, Mapping, Optional, Sequence, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -224,7 +224,7 @@ def plot_embedding_snapshots(
 
     for stage in available_stages:
         feat, lab = snapshots[stage]
-    
+
         feat, lab = subsample_for_viz(feat, lab, max_points=5000, seed=seed)
         coords, method_used = reduce_to_2d(
             feat, method=reduction_method, random_state=seed
@@ -248,23 +248,41 @@ def plot_embedding_snapshots(
     x_pad = (x_max - x_min) * 0.08
     y_pad = (y_max - y_min) * 0.08
 
-    fig, axes = plt.subplots(
-        len(available_stages),
-        1,
-        figsize=(12, 8 * len(available_stages)),
-        dpi=100,
-        constrained_layout=True,
-    )
-    if len(available_stages) == 1:
-        axes = [axes]
-
     class_to_local = {c: i for i, c in enumerate(task_classes)}
     cmap = plt.get_cmap("tab10")
+    stage_titles = {
+        "inicio": "Embeddings al inicio del pre-entrenamiento",
+        "mitad": "Embeddings a mitad del pre-entrenamiento",
+        "final": "Embeddings al final del pre-entrenamiento",
+    }
 
-    for ax, stage in zip(axes, available_stages):
+    base_save_path = None
+    if save_path is not None:
+        base_save_path = Path(save_path).with_suffix("")
+
+    handles = []
+    for i, class_name in enumerate(class_names):
+        h = plt.Line2D(
+            [0],
+            [0],
+            marker="o",
+            color="w",
+            label=class_name,
+            markerfacecolor=cmap(i),
+            markersize=12,
+        )
+        handles.append(h)
+
+    for stage in available_stages:
         coords, lab = plot_data[stage]
         local_labels = np.array(
             [class_to_local[int(y)] for y in lab.detach().cpu().numpy()]
+        )
+
+        fig, ax = plt.subplots(
+            figsize=(12, 8),
+            dpi=100,
+            constrained_layout=True,
         )
 
         ax.scatter(
@@ -281,14 +299,12 @@ def plot_embedding_snapshots(
             zorder=2,
         )
 
-        if stage == "inicio":
-            title = "Initial Stage"
-        elif stage == "mitad":
-            title = "Middle of Pre-training"
-        else:
-            title = "End of Pre-training"
-
-        ax.set_title(f"\n{title}", loc="center", fontsize=22, fontweight="bold")
+        ax.set_title(
+            f"\n{stage_titles.get(stage, stage)}",
+            loc="center",
+            fontsize=22,
+            fontweight="bold",
+        )
         ax.grid(alpha=0.3)
         ax.set_xlim(x_min - x_pad, x_max + x_pad)
         ax.set_ylim(y_min - y_pad, y_max + y_pad)
@@ -296,39 +312,29 @@ def plot_embedding_snapshots(
         ax.set_xlabel("Latent Dimension 1", fontsize=16)
         ax.set_ylabel("Latent Dimension 2", fontsize=16)
         ax.tick_params(axis="both", which="major", labelsize=14)
-    
-    handles = []
-    for i, class_name in enumerate(class_names):
-        h = plt.Line2D(
-            [0],
-            [0],
-            marker="o",
-            color="w",
-            label=class_name,
-            markerfacecolor=cmap(i),
-            markersize=12,
+
+        fig.legend(
+            handles=handles,
+            loc="lower center",
+            ncol=min(5, len(class_names)),
+            bbox_to_anchor=(0.52, -0.04),
+            fontsize=18,
+            frameon=True,
+            shadow=True,
         )
-        handles.append(h)
 
-    fig.legend(
-        handles=handles,
-        loc="lower center",
-        ncol=min(5, len(class_names)),
-        bbox_to_anchor=(0.52, -0.04),
-        fontsize=18,
-        frameon=True,
-        shadow=True,
-    )
+        fig.suptitle(
+            f"Evolución del espacio latente ({reduction_actual} projection)",
+            fontsize=26,
+            fontweight="black",
+        )
 
-    _save_figure(save_path, fig)
-    
-    fig.suptitle(
-        f"Latent Space Evolution ({reduction_actual} projection)",
-        fontsize=26,
-        fontweight="black",
-    )
+        if base_save_path is not None:
+            output_path = base_save_path.with_name(f"{base_save_path.stem}_{stage}.png")
+            _save_figure(output_path, fig)
 
-    plt.show()
+        plt.show()
+        plt.close(fig)
 
 
 def plot_linear_history(
