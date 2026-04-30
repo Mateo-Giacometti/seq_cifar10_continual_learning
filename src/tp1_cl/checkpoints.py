@@ -35,6 +35,10 @@ def save_checkpoint(path: str | Path, payload: dict[str, Any]) -> None:
         The path to save the checkpoint to.
     payload : dict[str, Any]
         The payload to save.
+
+    Returns
+    -------
+    None
     """
     checkpoint_path = Path(path)
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)

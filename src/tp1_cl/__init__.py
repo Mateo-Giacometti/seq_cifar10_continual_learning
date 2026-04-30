@@ -52,6 +52,7 @@ from .viz import (
     plot_bwt_curves,
     plot_confusion_matrix,
     plot_embedding_snapshots,
+    plot_embedding_snapshots_ind,
     plot_final_embeddings_comparison,
     plot_single_method_embeddings,
     plot_forgetting_by_task,
@@ -113,6 +114,7 @@ __all__ = [
     # Visualization
     "plot_supcon_loss",
     "plot_embedding_snapshots",
+    "plot_embedding_snapshots_ind",
     "plot_linear_history",
     "plot_cl_metrics",
     "plot_forgetting_metrics",

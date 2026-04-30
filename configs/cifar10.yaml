@@ -40,7 +40,7 @@ supcon:
 linear_eval:
   epochs: 10
   lr: 1.0
-  milestones: [30, 37, 45]
+  milestones: [4, 6, 8]
   gamma: 0.2
 
 finetuning:
@@ -81,9 +81,9 @@ co2l:
   lambda_ird: 1.0
   warmup_epochs: 10
   max_replay_batch_size: 64
-  eval_linear_epochs: 100
+  eval_linear_epochs: 10
   eval_linear_lr: 1.0
-  eval_linear_milestones: [60, 75, 90]
+  eval_linear_milestones: [4, 6, 8]
   eval_linear_gamma: 0.2
 
 er_ace:

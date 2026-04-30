@@ -224,6 +224,155 @@ def plot_embedding_snapshots(
 
     for stage in available_stages:
         feat, lab = snapshots[stage]
+    
+        feat, lab = subsample_for_viz(feat, lab, max_points=5000, seed=seed)
+        coords, method_used = reduce_to_2d(
+            feat, method=reduction_method, random_state=seed
+        )
+        reduction_actual = method_used
+
+        plot_data[stage] = (coords, lab)
+        bounds.append(
+            [
+                coords[:, 0].min(),
+                coords[:, 0].max(),
+                coords[:, 1].min(),
+                coords[:, 1].max(),
+            ]
+        )
+
+    bounds_arr = np.array(bounds)
+    x_min, x_max = float(np.min(bounds_arr[:, 0])), float(np.max(bounds_arr[:, 1]))
+    y_min, y_max = float(np.min(bounds_arr[:, 2])), float(np.max(bounds_arr[:, 3]))
+
+    x_pad = (x_max - x_min) * 0.08
+    y_pad = (y_max - y_min) * 0.08
+
+    fig, axes = plt.subplots(
+        len(available_stages),
+        1,
+        figsize=(12, 8 * len(available_stages)),
+        dpi=100,
+        constrained_layout=True,
+    )
+    if len(available_stages) == 1:
+        axes = [axes]
+
+    class_to_local = {c: i for i, c in enumerate(task_classes)}
+    cmap = plt.get_cmap("tab10")
+
+    for ax, stage in zip(axes, available_stages):
+        coords, lab = plot_data[stage]
+        local_labels = np.array(
+            [class_to_local[int(y)] for y in lab.detach().cpu().numpy()]
+        )
+
+        ax.scatter(
+            coords[:, 0],
+            coords[:, 1],
+            c=local_labels,
+            cmap=cmap,
+            vmin=0,
+            vmax=9,
+            s=45,
+            alpha=0.8,
+            edgecolors="white",
+            linewidths=0.3,
+            zorder=2,
+        )
+
+        if stage == "inicio":
+            title = "Initial Stage"
+        elif stage == "mitad":
+            title = "Middle of Pre-training"
+        else:
+            title = "End of Pre-training"
+
+        ax.set_title(f"\n{title}", loc="center", fontsize=22, fontweight="bold")
+        ax.grid(alpha=0.3)
+        ax.set_xlim(x_min - x_pad, x_max + x_pad)
+        ax.set_ylim(y_min - y_pad, y_max + y_pad)
+
+        ax.set_xlabel("Latent Dimension 1", fontsize=16)
+        ax.set_ylabel("Latent Dimension 2", fontsize=16)
+        ax.tick_params(axis="both", which="major", labelsize=14)
+    
+    handles = []
+    for i, class_name in enumerate(class_names):
+        h = plt.Line2D(
+            [0],
+            [0],
+            marker="o",
+            color="w",
+            label=class_name,
+            markerfacecolor=cmap(i),
+            markersize=12,
+        )
+        handles.append(h)
+
+    fig.legend(
+        handles=handles,
+        loc="lower center",
+        ncol=min(5, len(class_names)),
+        bbox_to_anchor=(0.52, -0.04),
+        fontsize=18,
+        frameon=True,
+        shadow=True,
+    )
+
+    _save_figure(save_path, fig)
+    
+    fig.suptitle(
+        f"Latent Space Evolution ({reduction_actual} projection)",
+        fontsize=26,
+        fontweight="black",
+    )
+
+    plt.show()
+
+
+def plot_embedding_snapshots_ind(
+    snapshots: Dict[str, Tuple[torch.Tensor, torch.Tensor]],
+    task_classes: List[int],
+    class_names: List[str],
+    seed: int,
+    reduction_method: Literal["auto", "umap", "tsne", "pca"] = "auto",
+    save_path: Optional[str | Path] = None,
+) -> None:
+    """
+    Plots snapshots of embeddings in latent space using dimensionality reduction, with one plot per stage.
+
+    Parameters
+    ----------
+    snapshots : Dict[str, Tuple[torch.Tensor, torch.Tensor]]
+        The snapshots of embeddings to plot.
+    task_classes : List[int]
+        The task classes to plot.
+    class_names : List[str]
+        The class names to plot.
+    seed : int
+        The seed for the random number generator.
+    reduction_method : Literal["auto", "umap", "tsne", "pca"], optional
+        The dimensionality reduction method, by default "auto".
+    save_path : Optional[str | Path], optional
+        The path to save the figure to, by default None.
+    
+    Returns
+    -------
+    None
+    """
+    stages = ["inicio", "mitad", "final"]
+    available_stages = [s for s in stages if s in snapshots]
+    if len(available_stages) == 0:
+        print("No snapshots available for embedding visualization.")
+        return
+
+    plot_data = {}
+    bounds = []
+    reduction_actual = "PCA"
+
+    for stage in available_stages:
+        feat, lab = snapshots[stage]
 
         feat, lab = subsample_for_viz(feat, lab, max_points=5000, seed=seed)
         coords, method_used = reduce_to_2d(
@@ -251,9 +400,9 @@ def plot_embedding_snapshots(
     class_to_local = {c: i for i, c in enumerate(task_classes)}
     cmap = plt.get_cmap("tab10")
     stage_titles = {
-        "inicio": "Embeddings al inicio del pre-entrenamiento",
-        "mitad": "Embeddings a mitad del pre-entrenamiento",
-        "final": "Embeddings al final del pre-entrenamiento",
+        "inicio": "Initial Stage",
+        "mitad": "Middle Stage",
+        "final": "Final Stage",
     }
 
     base_save_path = None
@@ -299,12 +448,11 @@ def plot_embedding_snapshots(
             zorder=2,
         )
 
-        ax.set_title(
-            f"\n{stage_titles.get(stage, stage)}",
-            loc="center",
-            fontsize=22,
-            fontweight="bold",
-        )
+        title_str = f"\n{stage_titles.get(stage, stage)}"
+        suptitle_str = f"Latent Space Evolution ({reduction_actual} projection)"
+        ax.set_title(title_str, loc="center", fontsize=22, fontweight="bold")
+        fig.suptitle(suptitle_str, fontsize=26, fontweight="black")
+
         ax.grid(alpha=0.3)
         ax.set_xlim(x_min - x_pad, x_max + x_pad)
         ax.set_ylim(y_min - y_pad, y_max + y_pad)
@@ -313,25 +461,27 @@ def plot_embedding_snapshots(
         ax.set_ylabel("Latent Dimension 2", fontsize=16)
         ax.tick_params(axis="both", which="major", labelsize=14)
 
-        fig.legend(
+        ax.legend(
             handles=handles,
-            loc="lower center",
+            loc="best",
             ncol=min(5, len(class_names)),
-            bbox_to_anchor=(0.52, -0.04),
-            fontsize=18,
+            fontsize=14,
             frameon=True,
             shadow=True,
         )
 
-        fig.suptitle(
-            f"Evolución del espacio latente ({reduction_actual} projection)",
-            fontsize=26,
-            fontweight="black",
-        )
-
         if base_save_path is not None:
-            output_path = base_save_path.with_name(f"{base_save_path.stem}_{stage}.png")
+            ax.set_title("")
+            fig.suptitle("")
+            stage_title = (
+                stage_titles.get(stage, stage).replace(" ", "_").replace("/", "-")
+            )
+            reduction_str = reduction_actual.replace(" ", "_")
+            output_name = f"{base_save_path.stem}_{stage_title}_{reduction_str}.png"
+            output_path = base_save_path.with_name(output_name)
             _save_figure(output_path, fig)
+            ax.set_title(title_str, loc="center", fontsize=22, fontweight="bold")
+            fig.suptitle(suptitle_str, fontsize=26, fontweight="black")
 
         plt.show()
         plt.close(fig)
@@ -364,7 +514,7 @@ def plot_linear_history(
     -------
     None
     """
- 
+
     if "train_acc" not in history or "test_acc" not in history:
         print("Linear history missing train_acc/test_acc keys.")
         return
@@ -420,13 +570,13 @@ def plot_cl_metrics(
     fig = plt.figure(figsize=(12, 8))
     plt.plot(x, class_il, marker="o", label="Class-IL", color="red")
     plt.plot(x, task_il, marker="s", label="Task-IL", color="blue")
-    
+
     for xi, yi in zip(x, class_il):
         plt.annotate(
             f"{yi:.2f}%",
             (xi, yi),
             textcoords="offset points",
-            xytext=(0, -18),  
+            xytext=(0, -18),
             ha="center",
             fontsize=10,
             fontweight="bold",
@@ -437,7 +587,7 @@ def plot_cl_metrics(
             f"{yi:.2f}%",
             (xi, yi),
             textcoords="offset points",
-            xytext=(0, 10), 
+            xytext=(0, 10),
             ha="center",
             fontsize=10,
             fontweight="bold",
@@ -463,7 +613,7 @@ def plot_forgetting_metrics(
 ) -> None:
     """
     Plots the average forgetting over tasks for a single method.
-    
+
     Parameters
     ----------
     history : Dict[str, object]
@@ -485,17 +635,21 @@ def plot_forgetting_metrics(
         return
 
     x = [task_id + 1 for task_id in task_ids]
-    
+
     matrix_class = history.get("taskwise_class_il_matrix")
     avg_f_class = None
     if matrix_class is not None:
-        f_matrix = compute_forgetting_matrix(np.array(matrix_class), definition=definition)
+        f_matrix = compute_forgetting_matrix(
+            np.array(matrix_class), definition=definition
+        )
         avg_f_class = compute_average_over_past(f_matrix)
 
     matrix_task = history.get("taskwise_task_il_matrix")
     avg_f_task = None
     if matrix_task is not None:
-        f_matrix_task = compute_forgetting_matrix(np.array(matrix_task), definition=definition)
+        f_matrix_task = compute_forgetting_matrix(
+            np.array(matrix_task), definition=definition
+        )
         avg_f_task = compute_average_over_past(f_matrix_task)
 
     if avg_f_class is None and avg_f_task is None:
@@ -503,10 +657,17 @@ def plot_forgetting_metrics(
         return
 
     fig = plt.figure(figsize=(12, 8))
-    
+
     if avg_f_class is not None:
-        plt.plot(x, avg_f_class, marker="o", label="Class-IL Forgetting", color="red", linewidth=2.5)
-        
+        plt.plot(
+            x,
+            avg_f_class,
+            marker="o",
+            label="Class-IL Forgetting",
+            color="red",
+            linewidth=2.5,
+        )
+
         for xi, yi in zip(x, avg_f_class):
             if not np.isnan(yi):
                 plt.annotate(
@@ -521,8 +682,15 @@ def plot_forgetting_metrics(
                 )
 
     if avg_f_task is not None:
-        plt.plot(x, avg_f_task, marker="s", label="Task-IL Forgetting", color="blue", linewidth=2.5)
-        
+        plt.plot(
+            x,
+            avg_f_task,
+            marker="s",
+            label="Task-IL Forgetting",
+            color="blue",
+            linewidth=2.5,
+        )
+
         for xi, yi in zip(x, avg_f_task):
             if not np.isnan(yi):
                 plt.annotate(
@@ -540,12 +708,14 @@ def plot_forgetting_metrics(
     plt.ylabel("Forgetting (%)", fontsize=16)
     plt.xticks(x)
     plt.tick_params(axis="both", which="major", labelsize=14)
-    plt.grid(True, linestyle='-', alpha=0.3)
+    plt.grid(True, linestyle="-", alpha=0.3)
     plt.legend(fontsize=14)
-    
+
     all_vals = []
-    if avg_f_class is not None: all_vals.extend(avg_f_class[~np.isnan(avg_f_class)])
-    if avg_f_task is not None: all_vals.extend(avg_f_task[~np.isnan(avg_f_task)])
+    if avg_f_class is not None:
+        all_vals.extend(avg_f_class[~np.isnan(avg_f_class)])
+    if avg_f_task is not None:
+        all_vals.extend(avg_f_task[~np.isnan(avg_f_task)])
     if all_vals:
         ymin = min(0, min(all_vals))
         ymax = max(all_vals) + 2
@@ -563,7 +733,7 @@ def plot_bwt_metrics(
 ) -> None:
     """
     Plots the average BWT over tasks for a single method.
-    
+
     Parameters
     ----------
     history : Dict[str, object]
@@ -583,7 +753,7 @@ def plot_bwt_metrics(
         return
 
     x = [task_id + 1 for task_id in task_ids]
-    
+
     matrix_class = history.get("taskwise_class_il_matrix")
     avg_b_class = None
     if matrix_class is not None:
@@ -601,10 +771,12 @@ def plot_bwt_metrics(
         return
 
     fig = plt.figure(figsize=(12, 8))
-    
+
     if avg_b_class is not None:
-        plt.plot(x, avg_b_class, marker="o", label="Class-IL BWT", color="red", linewidth=2.5)
-        
+        plt.plot(
+            x, avg_b_class, marker="o", label="Class-IL BWT", color="red", linewidth=2.5
+        )
+
         for xi, yi in zip(x, avg_b_class):
             if not np.isnan(yi):
                 plt.annotate(
@@ -619,8 +791,10 @@ def plot_bwt_metrics(
                 )
 
     if avg_b_task is not None:
-        plt.plot(x, avg_b_task, marker="s", label="Task-IL BWT", color="blue", linewidth=2.5)
-            
+        plt.plot(
+            x, avg_b_task, marker="s", label="Task-IL BWT", color="blue", linewidth=2.5
+        )
+
         for xi, yi in zip(x, avg_b_task):
             if not np.isnan(yi):
                 plt.annotate(
@@ -639,12 +813,14 @@ def plot_bwt_metrics(
     plt.ylabel("BWT (%)", fontsize=16)
     plt.xticks(x)
     plt.tick_params(axis="both", which="major", labelsize=14)
-    plt.grid(True, linestyle='-', alpha=0.3)
+    plt.grid(True, linestyle="-", alpha=0.3)
     plt.legend(fontsize=14)
-    
+
     all_vals = []
-    if avg_b_class is not None: all_vals.extend(avg_b_class[~np.isnan(avg_b_class)])
-    if avg_b_task is not None: all_vals.extend(avg_b_task[~np.isnan(avg_b_task)])
+    if avg_b_class is not None:
+        all_vals.extend(avg_b_class[~np.isnan(avg_b_class)])
+    if avg_b_task is not None:
+        all_vals.extend(avg_b_task[~np.isnan(avg_b_task)])
     if all_vals:
         ymin = min(0, min(all_vals)) - 1
         ymax = max(0, max(all_vals)) + 1
@@ -673,34 +849,38 @@ def plot_methods_comparison_class_il(
     -------
     None
     """
-    
+
     if len(histories_by_method) == 0:
         print("No method histories to compare.")
         return
 
     markers = ["o", "s", "D", "^", "v", "*", "X", "p"]
-    
+
     fig = plt.figure(figsize=(12, 8))
     for i, (method, hist) in enumerate(histories_by_method.items()):
         task_ids = [int(t) + 1 for t in hist.get("task_id", [])]
         class_il = hist.get("class_il", [])
         if len(task_ids) == 0:
             continue
-        
+
         marker = markers[i % len(markers)]
         plt.plot(task_ids, class_il, marker=marker, linewidth=2.5, label=method)
-        
+
     plt.xlabel("Number of tasks learned", fontsize=16)
-    plt.ylabel("Accuracy (%)", fontsize=16) 
+    plt.ylabel("Accuracy (%)", fontsize=16)
     plt.tick_params(axis="both", which="major", labelsize=14)
     plt.ylim(0, 105)
-    
-    all_tasks = {i + 1 for h in histories_by_method.values() for i in range(len(h.get("task_id", [])))}
+
+    all_tasks = {
+        i + 1
+        for h in histories_by_method.values()
+        for i in range(len(h.get("task_id", [])))
+    }
     if all_tasks:
         plt.xticks(sorted(all_tasks))
-    
+
     plt.legend(fontsize=14)
-    plt.grid(True, linestyle='-', alpha=0.3)
+    plt.grid(True, linestyle="-", alpha=0.3)
     _save_figure(save_path, fig)
     plt.title("Class-IL Comparison", fontsize=22, fontweight="bold")
     plt.show()
@@ -724,7 +904,7 @@ def plot_methods_comparison_task_il(
     -------
     None
     """
-    
+
     if len(histories_by_method) == 0:
         print("No method histories to compare.")
         return
@@ -736,21 +916,25 @@ def plot_methods_comparison_task_il(
         task_il = hist.get("task_il", [])
         if len(task_ids) == 0:
             continue
-        
+
         marker = markers[i % len(markers)]
         plt.plot(task_ids, task_il, marker=marker, linewidth=2.5, label=method)
-        
+
     plt.xlabel("Number of tasks learned", fontsize=16)
     plt.ylabel("Accuracy (%)", fontsize=16)
     plt.tick_params(axis="both", which="major", labelsize=14)
     plt.ylim(0, 105)
-    
-    all_tasks = {i + 1 for h in histories_by_method.values() for i in range(len(h.get("task_id", [])))}
+
+    all_tasks = {
+        i + 1
+        for h in histories_by_method.values()
+        for i in range(len(h.get("task_id", [])))
+    }
     if all_tasks:
         plt.xticks(sorted(all_tasks))
-        
+
     plt.legend(fontsize=14)
-    plt.grid(True, linestyle='-', alpha=0.3)
+    plt.grid(True, linestyle="-", alpha=0.3)
     _save_figure(save_path, fig)
     plt.title("Task-IL Comparison", fontsize=22, fontweight="bold")
     plt.show()
@@ -759,7 +943,7 @@ def plot_methods_comparison_task_il(
 def _as_taskwise_array(taskwise_matrix: Sequence[Sequence[float]]) -> np.ndarray:
     """
     Converts a taskwise matrix to a NumPy array.
-    
+
     Parameters
     ----------
     taskwise_matrix : Sequence[Sequence[float]]
@@ -784,7 +968,7 @@ def _as_taskwise_array(taskwise_matrix: Sequence[Sequence[float]]) -> np.ndarray
 def _first_seen_indices(arr: np.ndarray) -> List[Optional[int]]:
     """
     Computes the first seen indices for each task in a taskwise matrix.
-    
+
     Parameters
     ----------
     arr : np.ndarray
@@ -905,7 +1089,7 @@ def compute_bwt_matrix(taskwise_matrix: Sequence[Sequence[float]]) -> np.ndarray
 def compute_average_over_past(metric_matrix: Sequence[Sequence[float]]) -> np.ndarray:
     """
     Average a taskwise metric matrix over defined past-task entries per step.
-    
+
     Parameters
     ----------
     metric_matrix : Sequence[Sequence[float]]
@@ -998,7 +1182,7 @@ def plot_forgetting_curves(
     -------
     None
     """
-    
+
     if metric not in {"class_il", "task_il"}:
         raise ValueError("metric must be 'class_il' or 'task_il'")
     if len(histories_by_method) == 0:
@@ -1027,7 +1211,7 @@ def plot_forgetting_curves(
             continue
         if x is None:
             x = np.arange(1, len(avg_forgetting) + 1)
-        
+
         marker = markers[i % len(markers)]
         plt.plot(x, avg_forgetting, marker=marker, label=method)
         y_values.append(avg_forgetting)
@@ -1052,9 +1236,13 @@ def plot_forgetting_curves(
         else:
             plt.ylim(bottom=0)
     plt.legend(fontsize=14)
-    plt.grid(True, linestyle='-', alpha=0.3)
+    plt.grid(True, linestyle="-", alpha=0.3)
     _save_figure(save_path, fig)
-    plt.title(f"Average forgetting over tasks ({title_metric}, {label_definition})", fontsize=22, fontweight="bold")
+    plt.title(
+        f"Average forgetting over tasks ({title_metric}, {label_definition})",
+        fontsize=22,
+        fontweight="bold",
+    )
     plt.show()
 
 
@@ -1079,7 +1267,7 @@ def plot_bwt_curves(
     -------
     None
     """
-    
+
     if metric not in {"class_il", "task_il"}:
         raise ValueError("metric must be 'class_il' or 'task_il'")
     if len(histories_by_method) == 0:
@@ -1107,7 +1295,7 @@ def plot_bwt_curves(
             continue
         if x is None:
             x = np.arange(1, len(avg_bwt) + 1)
-        
+
         marker = markers[i % len(markers)]
         plt.plot(x, avg_bwt, marker=marker, label=method)
 
@@ -1120,9 +1308,11 @@ def plot_bwt_curves(
     plt.tick_params(axis="both", which="major", labelsize=14)
     plt.xticks(x)
     plt.legend(fontsize=14)
-    plt.grid(True, linestyle='-', alpha=0.3)
+    plt.grid(True, linestyle="-", alpha=0.3)
     _save_figure(save_path, fig)
-    plt.title(f"Average BWT over tasks ({title_metric})", fontsize=22, fontweight="bold")
+    plt.title(
+        f"Average BWT over tasks ({title_metric})", fontsize=22, fontweight="bold"
+    )
     plt.show()
 
 
@@ -1153,7 +1343,7 @@ def plot_forgetting_by_task(
     -------
     None
     """
-    
+
     if metric not in {"class_il", "task_il"}:
         raise ValueError("metric must be 'class_il' or 'task_il'")
 
@@ -1195,7 +1385,7 @@ def plot_forgetting_by_task(
     plt.tick_params(axis="both", which="major", labelsize=14)
     plt.ylim(bottom=0)
     plt.legend(ncol=2, fontsize=14)
-    plt.grid(True, linestyle='-', alpha=0.3)
+    plt.grid(True, linestyle="-", alpha=0.3)
     _save_figure(save_path, fig)
     plt.show()
 
@@ -1270,7 +1460,7 @@ def plot_taskwise_heatmap(
             task_labels.append(f"T{k}: {', '.join(names)}")
 
     ax.set_xticks(range(n_tasks))
-    ax.set_xticklabels(task_labels, rotation=45, ha="right", fontsize= 12)
+    ax.set_xticklabels(task_labels, rotation=45, ha="right", fontsize=12)
     ax.set_yticks(range(n_steps))
     ax.set_yticklabels(step_labels, fontsize=12)
     ax.set_xlabel("Evaluated task", fontsize=16)
@@ -1278,7 +1468,11 @@ def plot_taskwise_heatmap(
     fig.colorbar(im, ax=ax, label="Accuracy (%)", shrink=0.8)
     plt.tight_layout()
     _save_figure(save_path, fig)
-    plt.title(f"Taskwise accuracy matrix - {method_name} ({title_metric})", fontsize=22, fontweight="bold")
+    plt.title(
+        f"Taskwise accuracy matrix - {method_name} ({title_metric})",
+        fontsize=22,
+        fontweight="bold",
+    )
     plt.show()
 
 
@@ -1324,7 +1518,7 @@ def plot_final_embeddings_comparison(
     for method in methods:
         feat, lab = embeddings_by_method[method]
         all_labels_set.update(lab.detach().cpu().numpy().tolist())
-        
+
         feat, lab = subsample_for_viz(feat, lab, max_points=5000, seed=seed)
         coords, method_used = reduce_to_2d(
             feat, method=reduction_method, random_state=seed
@@ -1342,7 +1536,7 @@ def plot_final_embeddings_comparison(
         )
 
     unique_labels = sorted(all_labels_set)
-    
+
     bounds_arr = np.array(bounds)
     x_min, x_max = float(np.min(bounds_arr[:, 0])), float(np.max(bounds_arr[:, 1]))
     y_min, y_max = float(np.min(bounds_arr[:, 2])), float(np.max(bounds_arr[:, 3]))
@@ -1380,7 +1574,12 @@ def plot_final_embeddings_comparison(
             zorder=2,
         )
 
-        ax.set_title(f"\nMethod: {method} ({reduction_actual})", loc="center", fontsize=22, fontweight="bold")
+        ax.set_title(
+            f"\nMethod: {method} ({reduction_actual})",
+            loc="center",
+            fontsize=22,
+            fontweight="bold",
+        )
         ax.grid(alpha=0.3)
         ax.set_xlim(x_min - x_pad, x_max + x_pad)
         ax.set_ylim(y_min - y_pad, y_max + y_pad)
@@ -1475,7 +1674,12 @@ def plot_single_method_embeddings(
         zorder=2,
     )
 
-    ax.set_title(f"\n{reduction_actual} Latent Space", loc="center", fontsize=22, fontweight="bold")
+    ax.set_title(
+        f"\n{reduction_actual} Latent Space",
+        loc="center",
+        fontsize=22,
+        fontweight="bold",
+    )
     ax.grid(alpha=0.3)
     ax.tick_params(axis="both", which="major", labelsize=14)
 
@@ -1490,7 +1694,11 @@ def plot_single_method_embeddings(
         handles = []
         for lbl in unique_labels:
             lbl_int = int(lbl)
-            name = class_names[lbl_int] if lbl_int < len(class_names) else f"class {lbl_int}"
+            name = (
+                class_names[lbl_int]
+                if lbl_int < len(class_names)
+                else f"class {lbl_int}"
+            )
             h = plt.Line2D(
                 [0],
                 [0],
@@ -1515,6 +1723,7 @@ def plot_single_method_embeddings(
     _save_figure(save_path, fig)
     fig.suptitle(f"Embeddings - {method_name}", fontsize=26, fontweight="black")
     plt.show()
+
 
 def plot_confusion_matrix(
     confusion: np.ndarray,
@@ -1570,5 +1779,9 @@ def plot_confusion_matrix(
     fig.colorbar(im, ax=ax, label="Recall (%)" if normalize else "Count", shrink=0.8)
     plt.tight_layout()
     _save_figure(save_path, fig)
-    plt.title(f"Confusion matrix - {method_name}" + (" (normalized)" if normalize else ""), fontsize=22, fontweight="bold")
+    plt.title(
+        f"Confusion matrix - {method_name}" + (" (normalized)" if normalize else ""),
+        fontsize=22,
+        fontweight="bold",
+    )
     plt.show()
