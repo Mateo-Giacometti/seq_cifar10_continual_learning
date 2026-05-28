@@ -9,14 +9,8 @@ __pycache__/
 /.venv/
 /venv/
 
-# Reference material (avoid heavy academic assets in git history)
-/Consigna.pdf
-
 # Optional large artifacts
 *.zip
 *.tar
 *.tar.gz
 *.7z
-
-# Runtime artifacts
-/outputs/
