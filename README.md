@@ -12,7 +12,7 @@
       <p><strong>Course:</strong> Advanced Computer Vision (I309)</p>
       <p><strong>Institution:</strong> University of San Andres, Argentina</p>
       <p><strong>Program:</strong> Artificial Intelligence Engineering</p>
-      <p><strong>Academic Year:</strong> 4th year</p>
+      <p><strong>Academic Year:</strong> 5th year</p>
     </td>
   </tr>
 </table>
