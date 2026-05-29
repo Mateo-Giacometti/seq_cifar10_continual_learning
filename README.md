@@ -53,7 +53,7 @@ The project includes an extensive visualization engine `tp1_cl.viz` tailored for
 ## Repository Structure
 
 ```text
-tp1_vision_artificial_avanzada/
+seq_cifar10_continual_learning/
 ├── configs/
 │   └── cifar10.yaml        # Centralized hyperparameters
 ├── src/
